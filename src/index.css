@@ -1,0 +1,87 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: #0d1117;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: #30363d;
+    border-radius: 4px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: #484f58;
+  }
+
+  ::selection {
+    background: #1f6feb;
+    color: white;
+  }
+}
+
+@layer components {
+  .glass-panel {
+    @apply bg-github-card/80 backdrop-blur-xl border border-github-border rounded-xl;
+  }
+
+  .status-badge {
+    @apply inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold;
+  }
+
+  .status-pending {
+    @apply bg-github-red/10 text-github-red border border-github-red/20;
+  }
+
+  .status-inprogress {
+    @apply bg-github-yellow/10 text-github-yellow border border-github-yellow/20;
+  }
+
+  .status-completed {
+    @apply bg-github-green-bright/10 text-github-green-bright border border-github-green-bright/20;
+  }
+
+  .status-missed {
+    @apply bg-github-purple/10 text-github-purple border border-github-purple/20;
+  }
+
+  .status-cancelled {
+    @apply bg-github-dim/10 text-github-dim border border-github-dim/20;
+  }
+
+  .btn-primary {
+    @apply px-4 py-2 bg-github-green hover:bg-github-green-bright text-white font-semibold rounded-lg 
+           transition-all duration-200 active:scale-95 flex items-center gap-2;
+  }
+
+  .btn-secondary {
+    @apply px-4 py-2 bg-github-card hover:bg-github-border text-github-fg font-medium rounded-lg 
+           border border-github-border transition-all duration-200 active:scale-95 flex items-center gap-2;
+  }
+
+  .input-field {
+    @apply w-full px-3 py-2 bg-github-bg border border-github-border rounded-lg text-github-fg 
+           placeholder-github-dim focus:outline-none focus:border-github-blue focus:ring-1 
+           focus:ring-github-blue/50 transition-all;
+  }
+
+  .tree-item {
+    @apply px-3 py-2 rounded-lg cursor-pointer transition-all duration-150 
+           hover:bg-github-border/50 flex items-center gap-2;
+  }
+
+  .tree-item-selected {
+    @apply bg-github-blue/10 border border-github-blue/30;
+  }
+}

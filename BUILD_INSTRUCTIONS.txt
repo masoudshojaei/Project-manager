@@ -1,0 +1,23 @@
+BUILDING THE EXECUTABLE
+======================
+
+OPTION 1: Automatic (easiest)
+-----------------------------
+Double-click: build-exe.bat
+
+OPTION 2: Manual step-by-step
+-----------------------------
+Open CMD and run:
+
+  cd C:\Users\masoud\Downloads\project-manager
+  npm install
+  npm run build
+  cargo install tauri-cli
+  cargo tauri build
+
+OUTPUT
+======
+Your .exe will be at:
+  src-tauri\target\release\Project Status Manager.exe
+
+This single file runs on any Windows PC with nothing else installed.
