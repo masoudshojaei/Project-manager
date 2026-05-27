@@ -6,6 +6,19 @@ A universal desktop application for tracking project status using simple Markdow
 ![Platform](https://img.shields.io/badge/Platform-Windows-blue)
 ![License](https://img.shields.io/badge/License-MIT-green)
 
+## Download & Run (No Build Required)
+
+**For most users — just download and run:**
+
+1. Go to [Releases](../../releases)
+2. Download `project-manager.exe`
+3. Double-click to install or run
+4. Open your `STATUS.md` file — that's it
+
+No Node.js. No Rust. No Visual Studio. No command line. Works on any Windows 10/11 PC.
+
+---
+
 ## Features
 
 - **Universal** — Works with any project. Just edit the Markdown file.
@@ -14,15 +27,19 @@ A universal desktop application for tracking project status using simple Markdow
 - **Blocker Tracking** — Visual cards showing what's blocking progress
 - **Auto-Save** — Edits write back to your `.md` file instantly
 - **Dark Theme** — Easy on the eyes, professional look
-- **Zero Setup** — Single `.exe` file, no installation needed
+- **Zero Dependencies** — Single installer or portable `.exe`, nothing else needed
 
 ## Quick Start
 
-### 1. Download the App
+### Step 1: Get the App
 
-Grab the latest release from [Releases](../../releases) and download `Project Manager.exe`.
+| Method | What to do |
+|--------|-----------|
+| **Easiest** | Download `Project-Manager-Setup.exe` from [Releases](../../releases) and install |
+| **Portable** | Download `Project Manager.exe` from [Releases](../../releases) — runs without installing |
+| **Build yourself** | Follow the "Building from Source" section below |
 
-### 2. Create Your Status File
+### Step 2: Create Your Status File
 
 Copy the included `STATUS.md` template and customize it for your project:
 
@@ -64,9 +81,11 @@ Third-party service hasn't approved our developer account yet.
 **Affects:** Backend development, integration testing
 ```
 
-### 3. Open and Track
+### Step 3: Open and Track
 
-Double-click `Project Manager.exe`, then open your `STATUS.md` file. That's it.
+Launch the app and open your `STATUS.md` file. Check off tasks, set dates, mark milestones done. Everything saves automatically.
+
+---
 
 ## File Format Reference
 
@@ -143,7 +162,11 @@ Description of the problem.
 | `Right-click` | Task context menu |
 | `Double-click` | Edit task text |
 
+---
+
 ## Building from Source
+
+> **Most users don't need this.** Download the pre-built `.exe` from [Releases](../../releases) instead.
 
 If you want to build the executable yourself:
 
