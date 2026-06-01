@@ -1,9 +1,13 @@
 export interface Task {
   text: string;
   done: boolean;
+  estStart?: string;
   estEnd?: string;
+  actStart?: string;
+  actEnd?: string;
   note?: string;
   cancelledReason?: string;
+  blockers?: string[];
 }
 
 export interface Card {
@@ -36,6 +40,7 @@ export interface Blocker {
   title: string;
   description: string;
   affects?: string;
+  color?: string;
 }
 
 export interface ProjectMeta {

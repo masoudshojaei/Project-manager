@@ -3,13 +3,12 @@ import { motion } from "framer-motion";
 import { CalendarDays, ZoomIn, ZoomOut, RefreshCw } from "lucide-react";
 import type { ProjectData } from "../types";
 import { STATUS_COLORS } from "../types";
-import { format, parseISO, addDays, differenceInDays, isValid } from "date-fns";
+import { format, addDays, differenceInDays } from "date-fns";
+import { parseDate } from "../dateUtils";
 
 interface GanttChartProps {
   data: ProjectData;
 }
-
-type ViewMode = "milestones" | "tasks";
 
 interface GanttItem {
   id: string;
@@ -19,10 +18,11 @@ interface GanttItem {
   status: string;
   progress: number;
   category?: string;
+  actualStart?: Date;
+  actualEnd?: Date;
 }
 
 export default function GanttChart({ data }: GanttChartProps) {
-  const [viewMode, setViewMode] = useState<ViewMode>("milestones");
   const [zoom, setZoom] = useState(1);
   const [scrollX, setScrollX] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -32,53 +32,36 @@ export default function GanttChart({ data }: GanttChartProps) {
   const items = useMemo(() => {
     const result: GanttItem[] = [];
 
-    if (viewMode === "milestones") {
-      for (const ms of data.milestones) {
-        if (ms.estEnd) {
-          try {
-            const end = parseISO(ms.estEnd);
-            if (!isValid(end)) continue;
-            const start = addDays(end, -30);
-            const actEnd = ms.actEnd ? parseISO(ms.actEnd) : null;
-            result.push({
-              id: ms.id,
-              name: ms.name.replace(/[📦📐🔲📤⚡⚙️🌐🖥️🔋🧪📚🚀🏁]/g, "").trim(),
-              start,
-              end: actEnd && isValid(actEnd) ? actEnd : end,
-              status: ms.status,
-              progress: ms.progress,
-              category: ms.category,
-            });
-          } catch { /* skip invalid dates */ }
-        }
-      }
-    } else {
-      for (const sec of data.sections) {
-        for (const card of sec.cards) {
-          for (const task of card.tasks) {
-            if (task.estEnd && !task.cancelledReason) {
-              try {
-                const end = parseISO(task.estEnd);
-                if (!isValid(end)) continue;
-                const start = addDays(end, -14);
-                result.push({
-                  id: `${sec.id}-${card.id}-${task.text}`,
-                  name: `${sec.title.slice(0, 12)}: ${task.text.slice(0, 30)}`,
-                  start,
-                  end,
-                  status: task.done ? "completed" : "pending",
-                  progress: task.done ? 100 : 0,
-                  category: sec.title,
-                });
-              } catch { /* skip invalid dates */ }
-            }
-          }
+    // Always show tasks
+    for (const sec of data.sections) {
+      for (const card of sec.cards) {
+        for (const task of card.tasks) {
+          // prefer estStart/estEnd; fallback to estEnd only
+          const estStart = parseDate(task.estStart || undefined);
+          const estEnd = parseDate(task.estEnd || undefined);
+          if (!estStart && !estEnd) continue;
+          const start = estStart ? estStart : addDays(estEnd!, -14);
+          const end = estEnd ? estEnd : addDays(start, 14);
+          const actStart = parseDate(task.actStart || undefined);
+          const actEnd = parseDate(task.actEnd || undefined);
+
+          result.push({
+            id: `${sec.id}-${card.id}-${task.text}`,
+            name: `${sec.title.slice(0, 12)}: ${task.text.slice(0, 30)}`,
+            start,
+            end,
+            status: task.done ? "completed" : task.cancelledReason ? "cancelled" : (actStart ? "inprogress" : "pending"),
+            progress: task.done ? 100 : 0,
+            category: sec.title,
+            actualStart: actStart || undefined,
+            actualEnd: actEnd || undefined,
+          });
         }
       }
     }
 
     return result.sort((a, b) => a.start.getTime() - b.start.getTime());
-  }, [data, viewMode]);
+  }, [data]);
 
   const { minDate, maxDate, totalDays } = useMemo(() => {
     if (items.length === 0) return { minDate: new Date(), maxDate: addDays(new Date(), 30), totalDays: 30 };
@@ -149,65 +132,70 @@ export default function GanttChart({ data }: GanttChartProps) {
 
   return (
     <div className="h-full flex flex-col">
-      {/* Toolbar */}
+      {/* Toolbar - only zoom controls, no view mode toggle */}
       <div className="h-14 border-b border-github-border flex items-center px-6 gap-4 shrink-0">
         <div className="flex items-center gap-2 bg-github-card rounded-lg p-1 border border-github-border">
           <button
-            onClick={() => setViewMode("milestones")}
-            className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
-              viewMode === "milestones" ? "bg-github-blue/20 text-github-blue" : "text-github-dim hover:text-github-fg"
-            }`}
+            onClick={() => setZoom(z => Math.max(0.5, z - 0.2))}
+            className="p-1.5 rounded hover:bg-github-border text-github-dim hover:text-github-fg transition-colors"
+            title="Zoom Out"
           >
-            Milestones
-          </button>
-          <button
-            onClick={() => setViewMode("tasks")}
-            className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
-              viewMode === "tasks" ? "bg-github-blue/20 text-github-blue" : "text-github-dim hover:text-github-fg"
-            }`}
-          >
-            Tasks
-          </button>
-        </div>
-
-        <div className="h-6 w-px bg-github-border" />
-
-        <div className="flex items-center gap-2">
-          <button onClick={() => setZoom(z => Math.max(0.3, z - 0.2))} className="btn-secondary p-2">
             <ZoomOut className="w-4 h-4" />
           </button>
-          <span className="text-xs text-github-dim w-12 text-center">{Math.round(zoom * 100)}%</span>
-          <button onClick={() => setZoom(z => Math.min(3, z + 0.2))} className="btn-secondary p-2">
+          <span className="text-xs text-github-dim px-2">{Math.round(zoom * 100)}%</span>
+          <button
+            onClick={() => setZoom(z => Math.min(3, z + 0.2))}
+            className="p-1.5 rounded hover:bg-github-border text-github-dim hover:text-github-fg transition-colors"
+            title="Zoom In"
+          >
             <ZoomIn className="w-4 h-4" />
           </button>
+          <div className="w-px h-5 bg-github-border mx-1" />
+          <button
+            onClick={() => setScrollX(0)}
+            className="p-1.5 rounded hover:bg-github-border text-github-dim hover:text-github-fg transition-colors"
+            title="Reset View"
+          >
+            <RefreshCw className="w-4 h-4" />
+          </button>
         </div>
-
-        <div className="h-6 w-px bg-github-border" />
-
-        <button onClick={() => setScrollX(todayX - 400)} className="btn-secondary text-sm">
-          <RefreshCw className="w-4 h-4" />
-          Go to Today
-        </button>
-
-        <div className="ml-auto text-xs text-github-dim">
-          {items.length} items • {format(minDate, "MMM d")} - {format(maxDate, "MMM d, yyyy")}
-        </div>
+        <span className="text-sm text-github-dim ml-auto">Tasks Timeline</span>
       </div>
 
-      {/* Chart */}
-      <div 
-        ref={containerRef}
-        className="flex-1 overflow-hidden relative cursor-grab select-none"
-        style={{ background: "linear-gradient(180deg, #0d1117 0%, #0d1117 100%)" }}
-      >
-        <div 
-          className="absolute inset-0"
-          style={{ 
-            transform: `translateX(${-scrollX}px)`,
-            width: chartWidth + 200,
-          }}
+      {/* Chart Container */}
+      <div className="flex-1 overflow-hidden flex relative">
+        {/* Left Panel - Task Names (fixed) */}
+        <div className="w-48 border-r border-github-border bg-github-bg/50 overflow-y-auto shrink-0">
+          <div className="absolute top-0 left-0 right-0 h-16 z-10" />
+          <div className="pt-16">
+            {items.map((item, idx) => {
+              const y = idx * 48;
+              return (
+                <div
+                  key={item.id}
+                  className="h-12 px-3 py-2 border-b border-github-border/30 flex items-center truncate"
+                >
+                  <span className="text-xs font-medium text-github-fg truncate">{item.name}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Right Panel - Gantt Bars (scrollable) */}
+        <div
+          ref={containerRef}
+          className="flex-1 overflow-hidden relative cursor-grab select-none"
+          style={{ background: "linear-gradient(180deg, #0d1117 0%, #0d1117 100%)" }}
         >
-          {/* Grid Lines */}
+          <div 
+            className="absolute inset-0"
+            style={{ 
+              transform: `translateX(${-scrollX}px)`,
+              width: chartWidth + 200,
+            }}
+          >
+            {/* Grid Lines */}
           {Array.from({ length: totalDays + 1 }).map((_, i) => {
             const date = addDays(minDate, i);
             const isWeekend = date.getDay() === 0 || date.getDay() === 6;
@@ -297,6 +285,30 @@ export default function GanttChart({ data }: GanttChartProps) {
                       }}
                     />
 
+                    {/* Actual bar (solid) if present */}
+                    {item.actualStart && item.actualEnd && (() => {
+                      try {
+                        const actualLeftOffset = differenceInDays(item.actualStart, item.start) * dayWidth;
+                        const actualWidth = Math.max(1, differenceInDays(item.actualEnd, item.actualStart)) * dayWidth;
+                        return (
+                          <div
+                            className="absolute h-3 rounded-lg"
+                            style={{
+                              left: actualLeftOffset,
+                              top: '50%',
+                              transform: 'translateY(-50%)',
+                              width: actualWidth,
+                              backgroundColor: color,
+                              zIndex: 30,
+                              boxShadow: '0 1px 6px rgba(0,0,0,0.4)'
+                            }}
+                          />
+                        );
+                      } catch (e) {
+                        return null;
+                      }
+                    })()}
+
                     {/* Label */}
                     <div className="absolute inset-0 flex items-center px-3">
                       <span className="text-xs font-semibold text-white truncate drop-shadow-md">
@@ -312,6 +324,12 @@ export default function GanttChart({ data }: GanttChartProps) {
                       <div className="text-xs text-github-dim space-y-1">
                         <div>Start: {format(item.start, "MMM d, yyyy")}</div>
                         <div>End: {format(item.end, "MMM d, yyyy")}</div>
+                        {item.actualStart && item.actualEnd && (
+                          <>
+                            <div className="mt-1 text-xs text-github-dim">Actual Start: {format(item.actualStart, "MMM d, yyyy")}</div>
+                            <div className="text-xs text-github-dim">Actual End: {format(item.actualEnd, "MMM d, yyyy")}</div>
+                          </>
+                        )}
                         <div className="flex items-center gap-2">
                           Status: 
                           <span className="status-badge text-xs" style={{ color, borderColor: `${color}40`, backgroundColor: `${color}15` }}>

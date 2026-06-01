@@ -14,11 +14,19 @@ pub struct Task {
     pub text: String,
     pub done: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub est_start: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub est_end: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub act_start: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub act_end: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cancelled_reason: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub blockers: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -63,6 +71,8 @@ pub struct Blocker {
     pub description: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub affects: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -110,6 +120,14 @@ impl Default for ProjectMeta {
 // ─────────────────────────────────────────────────────────────
 //  PARSER
 // ─────────────────────────────────────────────────────────────
+
+fn is_valid_date(date_str: &str) -> bool {
+    if date_str.trim().is_empty() || date_str.trim() == "-" {
+        return false;
+    }
+    let parts: Vec<&str> = date_str.trim().split('/').collect();
+    parts.len() == 3
+}
 
 pub fn parse_status_md(content: &str) -> ProjectData {
     let mut sections: Vec<Section> = Vec::new();
@@ -176,21 +194,43 @@ pub fn parse_status_md(content: &str) -> ProjectData {
             if let Some((sec_idx, card_idx)) = current_card {
                 let done = caps.get(1).unwrap().as_str().to_lowercase() == "x";
                 let mut task_text = caps.get(2).unwrap().as_str().trim().to_string();
-                let mut est = None;
+                let mut est_start = None;
+                let mut est_end = None;
+                let mut act_start = None;
+                let mut act_end = None;
                 let mut note = None;
                 let mut cancelled = None;
+                let mut blockers = None;
 
                 if task_text.contains("|") {
                     let parts: Vec<String> = task_text.split("|").map(|s| s.trim().to_string()).collect();
                     task_text = parts[0].clone();
                     for p in &parts[1..] {
                         let p = p.trim();
-                        if p.to_lowercase().starts_with("est:") {
-                            est = Some(p[4..].trim().to_string());
+                        if p.to_lowercase().starts_with("est-start:") {
+                            let val = p[10..].trim();
+                            if is_valid_date(val) { est_start = Some(val.to_string()); }
+                        } else if p.to_lowercase().starts_with("est-end:") {
+                            let val = p[8..].trim();
+                            if is_valid_date(val) { est_end = Some(val.to_string()); }
+                        } else if p.to_lowercase().starts_with("act-start:") {
+                            let val = p[10..].trim();
+                            if is_valid_date(val) { act_start = Some(val.to_string()); }
+                        } else if p.to_lowercase().starts_with("act-end:") {
+                            let val = p[8..].trim();
+                            if is_valid_date(val) { act_end = Some(val.to_string()); }
+                        } else if p.to_lowercase().starts_with("est:") {
+                            let val = p[4..].trim();
+                            if is_valid_date(val) { est_end = Some(val.to_string()); }
                         } else if p.to_lowercase().starts_with("note:") {
                             note = Some(p[5..].trim().to_string());
                         } else if p.to_lowercase().starts_with("cancelled:") {
                             cancelled = Some(p[10..].trim().to_string());
+                        } else if p.to_lowercase().starts_with("blockers:") {
+                            let blk_str = p[9..].trim();
+                            if !blk_str.is_empty() {
+                                blockers = Some(blk_str.split(',').map(|s| s.trim().to_string()).collect());
+                            }
                         }
                     }
                 }
@@ -198,9 +238,13 @@ pub fn parse_status_md(content: &str) -> ProjectData {
                 sections[sec_idx].cards[card_idx].tasks.push(Task {
                     text: task_text,
                     done,
-                    est_end: est,
+                    est_start,
+                    est_end,
+                    act_start,
+                    act_end,
                     note,
                     cancelled_reason: cancelled,
+                    blockers,
                 });
             }
             i += 1;
@@ -246,9 +290,17 @@ pub fn parse_status_md(content: &str) -> ProjectData {
         if let Some(caps) = Regex::new(r"^###\s+🚫\s+(.*)$").unwrap().captures(line) {
             let title = caps.get(1).unwrap().as_str().to_string();
             let mut desc_lines: Vec<String> = Vec::new();
+            let mut color = None;
             i += 1;
             while i < lines.len() && !lines[i].trim().is_empty() && !lines[i].starts_with("##") && !lines[i].starts_with("###") {
-                desc_lines.push(lines[i].trim().to_string());
+                let trimmed = lines[i].trim();
+                if trimmed.starts_with("[color:") {
+                    if let Some(end) = trimmed.find(']') {
+                        color = Some(trimmed[7..end].to_string());
+                    }
+                } else {
+                    desc_lines.push(trimmed.to_string());
+                }
                 i += 1;
             }
             let desc = desc_lines.join(" ");
@@ -265,6 +317,7 @@ pub fn parse_status_md(content: &str) -> ProjectData {
                 title,
                 description: desc_clean,
                 affects,
+                color,
             });
             continue;
         }
@@ -411,11 +464,23 @@ pub fn serialize_status_md(data: &ProjectData) -> String {
             for task in &card.tasks {
                 let check = if task.done { "x" } else { " " };
                 let mut extra = String::new();
-                if let Some(ref est) = task.est_end {
-                    extra.push_str(&format!(" | est:{}", est));
+                if let Some(ref est_start) = task.est_start {
+                    extra.push_str(&format!(" | est-start:{}", est_start));
+                }
+                if let Some(ref est_end) = task.est_end {
+                    extra.push_str(&format!(" | est-end:{}", est_end));
+                }
+                if let Some(ref act_start) = task.act_start {
+                    extra.push_str(&format!(" | act-start:{}", act_start));
+                }
+                if let Some(ref act_end) = task.act_end {
+                    extra.push_str(&format!(" | act-end:{}", act_end));
                 }
                 if let Some(ref note) = task.note {
                     extra.push_str(&format!(" | note:{}", note));
+                }
+                if let Some(ref blockers) = task.blockers {
+                    extra.push_str(&format!(" | blockers:{}", blockers.join(",")));
                 }
                 if let Some(ref reason) = task.cancelled_reason {
                     extra.push_str(&format!(" | cancelled:{}", reason));
@@ -445,6 +510,9 @@ pub fn serialize_status_md(data: &ProjectData) -> String {
         result.push_str(&format!("{}\n", blk.description));
         if let Some(ref affects) = blk.affects {
             result.push_str(&format!("**Affects:** {}\n", affects));
+        }
+        if let Some(ref color) = blk.color {
+            result.push_str(&format!("[color:{}]\n", color));
         }
         result.push_str("\n");
     }

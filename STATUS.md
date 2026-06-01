@@ -2,7 +2,7 @@
 
 > **Owner:** Your Name  
 > **Focus:** Brief description of what this project is about  
-> **Last Updated:** 2026-05-27
+> **Last Updated:** 2026-06-01
 
 ---
 
@@ -18,29 +18,27 @@
 ## Category One
 
 ### Subcategory A 🔴 0%
-- [ ] First task description | est:2026-06-30
-- [ ] Second task with more details
-- [ ] Third task | note:some additional info
+- [ ] First task description | est-start:01/06/2026 | est-end:15/06/2026
+- [ ] Second task with more details | est-start:02/06/2026 | est-end:20/06/2026
+- [ ] Third task | est-start:01/06/2026 | est-end:10/06/2026 | blockers:blk_0
 
 ### Subcategory B 🔴 0%
-- [ ] Another task | est:2026-07-15
-- [ ] Task with sub-items
-  - [ ] Sub-task one
-  - [ ] Sub-task two
+- [ ] Another task | est-start:03/06/2026 | est-end:15/06/2026
+- [ ] Task with blocker reference | est-start:05/06/2026 | est-end:25/06/2026 | blockers:blk_1,blk_2
 
 ---
 
 ## Category Two
 
 ### Planning Phase 🔴 0%
-- [ ] Define project scope
-- [ ] Set budget and timeline
-- [ ] Identify stakeholders
+- [ ] Define project scope | est-start:01/06/2026 | est-end:10/06/2026
+- [ ] Set budget and timeline | est-start:01/06/2026 | est-end:15/06/2026
+- [ ] Identify stakeholders | est-start:05/06/2026 | est-end:20/06/2026
 
 ### Execution Phase 🔴 0%
-- [ ] Begin development
-- [ ] Weekly progress reviews
-- [ ] Quality assurance testing
+- [ ] Begin development | est-start:15/06/2026 | est-end:30/07/2026 | act-start:15/06/2026
+- [ ] Weekly progress reviews | est-start:15/06/2026 | est-end:30/07/2026
+- [ ] Quality assurance testing | est-start:20/07/2026 | est-end:10/08/2026
 
 ---
 
@@ -59,7 +57,10 @@
 ### 🚫 Example Blocker Title
 Description of what is blocking progress and why it matters.
 **Affects:** Which milestones or tasks are impacted
+[color:#f85149]
 
 ### 🚫 Resource Constraints
 Not enough time, budget, or people to proceed as planned.
 **Affects:** Execution phase, delivery timeline
+[color:#d29922]
+

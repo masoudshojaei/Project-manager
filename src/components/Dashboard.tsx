@@ -11,10 +11,13 @@ import {
   Edit3,
   XCircle,
   ArrowRightCircle,
-  CircleDashed
+  CircleDashed,
+  AlertCircle
 } from "lucide-react";
 import type { ProjectData, Task } from "../types";
 import { STATUS_COLORS, STATUS_EMOJI } from "../types";
+import TaskDetailsPanel from "./TaskDetailsPanel";
+import DateInput from "./DateInput";
 
 interface DashboardProps {
   data: ProjectData;
@@ -25,11 +28,14 @@ export default function Dashboard({ data, onUpdate }: DashboardProps) {
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(data.sections.map(s => s.id)));
   const [expandedCards, setExpandedCards] = useState<Set<string>>(new Set(data.sections.flatMap(s => s.cards.map(c => c.id))));
   const [selectedTask, setSelectedTask] = useState<{ sectionId: string; cardId: string; taskIndex: number } | null>(null);
+  const [detailsPanel, setDetailsPanel] = useState<{ sectionId: string; cardId: string; taskIndex: number } | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; task: any } | null>(null);
   const [editingTask, setEditingTask] = useState<{ sectionId: string; cardId: string; taskIndex: number; text: string } | null>(null);
   const [addingTask, setAddingTask] = useState<{ sectionId: string; cardId: string } | null>(null);
   const [newTaskText, setNewTaskText] = useState("");
-  const [selectedMilestone, setSelectedMilestone] = useState<string | null>(null);
+  const [editingSection, setEditingSection] = useState<string | null>(null);
+  const [editingCard, setEditingCard] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<"milestones" | "blockers">("milestones");
 
   const stats = useMemo(() => {
     const totalTasks = data.sections.reduce((sum, s) => sum + s.cards.reduce((c, card) => c + card.tasks.length, 0), 0);
@@ -136,9 +142,13 @@ export default function Dashboard({ data, onUpdate }: DashboardProps) {
     card.tasks.push({
       text: newTaskText.trim(),
       done: false,
+      estStart: undefined,
       estEnd: undefined,
+      actStart: undefined,
+      actEnd: undefined,
       note: undefined,
       cancelledReason: undefined,
+      blockers: undefined,
     });
     onUpdate(newData);
     setNewTaskText("");
@@ -199,7 +209,29 @@ export default function Dashboard({ data, onUpdate }: DashboardProps) {
                   className="w-full flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-github-border/30 transition-colors text-left"
                 >
                   {expandedSections.has(section.id) ? <ChevronDown className="w-4 h-4 text-github-dim" /> : <ChevronRight className="w-4 h-4 text-github-dim" />}
-                  <span className="text-sm font-semibold text-github-fg">{section.title}</span>
+                  {editingSection === section.id ? (
+                    <input
+                      autoFocus
+                      defaultValue={section.title}
+                      onBlur={(e) => {
+                        const newData = { ...data };
+                        const sec = newData.sections.find(s => s.id === section.id)!;
+                        sec.title = e.target.value || section.title;
+                        onUpdate(newData);
+                        setEditingSection(null);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") e.currentTarget.blur();
+                        if (e.key === "Escape") setEditingSection(null);
+                      }}
+                      className="input-field text-sm py-1 flex-1"
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                  ) : (
+                    <span className="text-sm font-semibold text-github-fg cursor-pointer hover:text-github-blue" onClick={(e) => { e.stopPropagation(); setEditingSection(section.id); }}>
+                      {section.title}
+                    </span>
+                  )}
                   <span className="text-xs text-github-dim ml-auto">{section.cards.length} cards</span>
                 </button>
 
@@ -223,7 +255,30 @@ export default function Dashboard({ data, onUpdate }: DashboardProps) {
                             >
                               {expandedCards.has(card.id) ? <ChevronDown className="w-3.5 h-3.5 text-github-dim" /> : <ChevronRight className="w-3.5 h-3.5 text-github-dim" />}
                               <span className="text-sm">{STATUS_EMOJI[card.status as keyof typeof STATUS_EMOJI] || "⚪"}</span>
-                              <span className="text-sm font-medium text-github-fg">{card.name}</span>
+                              {editingCard === card.id ? (
+                                <input
+                                  autoFocus
+                                  defaultValue={card.name}
+                                  onBlur={(e) => {
+                                    const newData = { ...data };
+                                    const sec = newData.sections.find(s => s.id === section.id)!;
+                                    const c = sec.cards.find(c => c.id === card.id)!;
+                                    c.name = e.target.value || card.name;
+                                    onUpdate(newData);
+                                    setEditingCard(null);
+                                  }}
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter") e.currentTarget.blur();
+                                    if (e.key === "Escape") setEditingCard(null);
+                                  }}
+                                  className="input-field text-sm py-0.5 flex-1"
+                                  onClick={(e) => e.stopPropagation()}
+                                />
+                              ) : (
+                                <span className="text-sm font-medium text-github-fg cursor-pointer hover:text-github-blue" onClick={(e) => { e.stopPropagation(); setEditingCard(card.id); }}>
+                                  {card.name}
+                                </span>
+                              )}
                               <div className="ml-auto flex items-center gap-2">
                                 <div className="w-20 h-1.5 bg-github-bg rounded-full overflow-hidden">
                                   <div 
@@ -250,14 +305,18 @@ export default function Dashboard({ data, onUpdate }: DashboardProps) {
                                   {card.tasks.map((task, tIdx) => {
                                     const isSelected = selectedTask?.sectionId === section.id && selectedTask?.cardId === card.id && selectedTask?.taskIndex === tIdx;
                                     const isEditing = editingTask?.sectionId === section.id && editingTask?.cardId === card.id && editingTask?.taskIndex === tIdx;
+                                    const taskStatus = task.done ? "completed" : task.cancelledReason ? "cancelled" : (task.actStart ? "inprogress" : "pending");
+                                    const statusColor = STATUS_COLORS[taskStatus as keyof typeof STATUS_COLORS];
+                                    const statusBg = `${statusColor}08`;
 
                                     return (
                                       <motion.div
                                         key={tIdx}
                                         initial={{ opacity: 0 }}
                                         animate={{ opacity: 1 }}
-                                        className={`flex items-center gap-2 px-3 py-1.5 rounded-lg transition-all group
-                                          ${isSelected ? "bg-github-blue/10 border border-github-blue/30" : "hover:bg-github-border/20 border border-transparent"}`}
+                                        className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-all group border
+                                          ${isSelected ? "bg-github-blue/10 border-github-blue/30" : `border-transparent`}`}
+                                        style={{ backgroundColor: statusBg }}
                                         onClick={() => setSelectedTask({ sectionId: section.id, cardId: card.id, taskIndex: tIdx })}
                                         onContextMenu={(e) => handleContextMenu(e, section.id, card.id, tIdx, task)}
                                       >
@@ -286,16 +345,56 @@ export default function Dashboard({ data, onUpdate }: DashboardProps) {
                                             }}
                                           />
                                         ) : (
-                                          <span className={`text-sm flex-1 truncate ${task.done ? "line-through text-github-dim" : task.cancelledReason ? "line-through text-github-dim/50" : "text-github-fg"}`}>
-                                            {task.text}
-                                          </span>
-                                        )}
+                                          <div className="flex-1 min-w-0">
+                                            <div className="text-sm font-medium truncate text-github-fg">{task.text}</div>
 
-                                        {task.estEnd && (
-                                          <span className="text-xs text-github-dim flex items-center gap-1 shrink-0">
-                                            <CalendarDays className="w-3 h-3" />
-                                            {task.estEnd}
-                                          </span>
+                                            <div className="mt-1 grid grid-cols-4 gap-2 text-xs">
+                                              <DateInput
+                                                label="est-start"
+                                                value={task.estStart}
+                                                onChange={(v) => {
+                                                  const newData = { ...data };
+                                                  const sec = newData.sections.find(s => s.id === section.id)!;
+                                                  const c = sec.cards.find(c => c.id === card.id)!;
+                                                  c.tasks[tIdx].estStart = v;
+                                                  onUpdate(newData);
+                                                }}
+                                              />
+                                              <DateInput
+                                                label="est-end"
+                                                value={task.estEnd}
+                                                onChange={(v) => {
+                                                  const newData = { ...data };
+                                                  const sec = newData.sections.find(s => s.id === section.id)!;
+                                                  const c = sec.cards.find(c => c.id === card.id)!;
+                                                  c.tasks[tIdx].estEnd = v;
+                                                  onUpdate(newData);
+                                                }}
+                                              />
+                                              <DateInput
+                                                label="act-start"
+                                                value={task.actStart}
+                                                onChange={(v) => {
+                                                  const newData = { ...data };
+                                                  const sec = newData.sections.find(s => s.id === section.id)!;
+                                                  const c = sec.cards.find(c => c.id === card.id)!;
+                                                  c.tasks[tIdx].actStart = v;
+                                                  onUpdate(newData);
+                                                }}
+                                              />
+                                              <DateInput
+                                                label="act-end"
+                                                value={task.actEnd}
+                                                onChange={(v) => {
+                                                  const newData = { ...data };
+                                                  const sec = newData.sections.find(s => s.id === section.id)!;
+                                                  const c = sec.cards.find(c => c.id === card.id)!;
+                                                  c.tasks[tIdx].actEnd = v;
+                                                  onUpdate(newData);
+                                                }}
+                                              />
+                                            </div>
+                                          </div>
                                         )}
 
                                         <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 shrink-0">
@@ -357,19 +456,36 @@ export default function Dashboard({ data, onUpdate }: DashboardProps) {
         </div>
       </div>
 
-      {/* Right Panel - Milestones */}
+      {/* Right Panel - Milestones/Blockers */}
       <div className="w-[420px] flex flex-col gap-4 shrink-0">
         <div className="glass-panel flex-1 overflow-hidden flex flex-col">
           <div className="px-4 py-3 border-b border-github-border flex items-center justify-between shrink-0">
-            <h2 className="text-sm font-semibold text-white flex items-center gap-2">
-              <CalendarDays className="w-4 h-4 text-github-purple" />
-              Milestones
-            </h2>
-            <span className="text-xs text-github-dim">{data.milestones.length} milestones</span>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setViewMode(viewMode === "milestones" ? "blockers" : "milestones")}
+                className="flex items-center gap-2"
+              >
+                {viewMode === "milestones" ? (
+                  <h2 className="text-sm font-semibold text-white flex items-center gap-2">
+                    <CalendarDays className="w-4 h-4 text-github-purple" />
+                    Milestones
+                  </h2>
+                ) : (
+                  <h2 className="text-sm font-semibold text-white flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 text-github-red" />
+                    Blockers
+                  </h2>
+                )}
+              </button>
+            </div>
+            <span className="text-xs text-github-dim">
+              {viewMode === "milestones" ? `${data.milestones.length} milestones` : `${data.blockers.length} blockers`}
+            </span>
           </div>
 
           <div className="flex-1 overflow-y-auto p-2">
-            {data.milestones.map((ms, idx) => (
+            {viewMode === "milestones" ? (
+            data.milestones.map((ms, idx) => (
               <motion.div
                 key={ms.id}
                 initial={{ opacity: 0, y: 10 }}
@@ -436,7 +552,32 @@ export default function Dashboard({ data, onUpdate }: DashboardProps) {
                   )}
                 </AnimatePresence>
               </motion.div>
-            ))}
+            ))
+            ) : (
+              data.blockers.map((blocker, idx) => (
+                <motion.div
+                  key={blocker.id}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: idx * 0.03 }}
+                  className="p-3 rounded-lg mb-2 transition-all border bg-github-card/50 border-github-border/50 hover:border-github-border"
+                >
+                  <div className="flex items-start gap-3">
+                    <div 
+                      className="w-3 h-3 rounded-full mt-1 shrink-0"
+                      style={{ backgroundColor: blocker.color || "#f85149" }}
+                    />
+                    <div className="flex-1 min-w-0">
+                      <h3 className="text-sm font-semibold text-github-fg truncate">{blocker.title}</h3>
+                      <p className="text-xs text-github-dim mt-1">{blocker.description}</p>
+                      {blocker.affects && (
+                        <p className="text-xs text-github-dim mt-1.5"><strong>Affects:</strong> {blocker.affects}</p>
+                      )}
+                    </div>
+                  </div>
+                </motion.div>
+              ))
+            )}
           </div>
         </div>
       </div>
@@ -487,12 +628,12 @@ export default function Dashboard({ data, onUpdate }: DashboardProps) {
               <div className="h-px bg-github-border my-1" />
               <button
                 onClick={() => {
-                  setEditingTask({ sectionId: contextMenu.task.sectionId, cardId: contextMenu.task.cardId, taskIndex: contextMenu.task.taskIndex, text: contextMenu.task.text });
+                  setDetailsPanel({ sectionId: contextMenu.task.sectionId, cardId: contextMenu.task.cardId, taskIndex: contextMenu.task.taskIndex });
                   setContextMenu(null);
                 }}
                 className="w-full px-4 py-2 text-left text-sm text-github-fg hover:bg-github-blue/10 hover:text-github-blue flex items-center gap-2 transition-colors"
               >
-                <Edit3 className="w-4 h-4" /> Edit Task...
+                <Edit3 className="w-4 h-4" /> Edit Details...
               </button>
               <button
                 onClick={() => deleteTask(contextMenu.task.sectionId, contextMenu.task.cardId, contextMenu.task.taskIndex)}
@@ -502,6 +643,20 @@ export default function Dashboard({ data, onUpdate }: DashboardProps) {
               </button>
             </motion.div>
           </>
+        )}
+      </AnimatePresence>
+
+      {/* Task Details Panel */}
+      <AnimatePresence>
+        {detailsPanel && (
+          <TaskDetailsPanel
+            data={data}
+            onUpdate={onUpdate}
+            sectionId={detailsPanel.sectionId}
+            cardId={detailsPanel.cardId}
+            taskIndex={detailsPanel.taskIndex}
+            onClose={() => setDetailsPanel(null)}
+          />
         )}
       </AnimatePresence>
     </div>
