@@ -40,7 +40,7 @@ export default function Dashboard({ data, onUpdate }: DashboardProps) {
   const [viewMode, setViewMode] = useState<"milestones" | "blockers">("milestones");
 
   const [selectedMilestone, setSelectedMilestone] = useState<string | null>(null);
-  
+
   const stats = useMemo(() => {
     const totalTasks = data.sections.reduce((sum, s) => sum + s.cards.reduce((c, card) => c + card.tasks.length, 0), 0);
     const doneTasks = data.sections.flatMap(s => s.cards).flatMap(c => c.tasks).filter(t => t.done && !t.cancelledReason).length;
@@ -178,6 +178,43 @@ export default function Dashboard({ data, onUpdate }: DashboardProps) {
     onUpdate(newData);
   };
 
+  // ── Move Cards within a Section ──
+  const moveCardUp = (sectionId: string, cardIndex: number) => {
+    if (cardIndex === 0) return;
+    const newData = { ...data };
+    const section = newData.sections.find(s => s.id === sectionId)!;
+    const cards = section.cards;
+    [cards[cardIndex - 1], cards[cardIndex]] = [cards[cardIndex], cards[cardIndex - 1]];
+    onUpdate(newData);
+  };
+
+  const moveCardDown = (sectionId: string, cardIndex: number) => {
+    const section = data.sections.find(s => s.id === sectionId)!;
+    if (cardIndex >= section.cards.length - 1) return;
+    const newData = { ...data };
+    const sec = newData.sections.find(s => s.id === sectionId)!;
+    const cards = sec.cards;
+    [cards[cardIndex], cards[cardIndex + 1]] = [cards[cardIndex + 1], cards[cardIndex]];
+    onUpdate(newData);
+  };
+
+  // ── Move Sections within the Project ──
+  const moveSectionUp = (sectionIndex: number) => {
+    if (sectionIndex === 0) return;
+    const newData = { ...data };
+    const sections = newData.sections;
+    [sections[sectionIndex - 1], sections[sectionIndex]] = [sections[sectionIndex], sections[sectionIndex - 1]];
+    onUpdate(newData);
+  };
+
+  const moveSectionDown = (sectionIndex: number) => {
+    if (sectionIndex >= data.sections.length - 1) return;
+    const newData = { ...data };
+    const sections = newData.sections;
+    [sections[sectionIndex], sections[sectionIndex + 1]] = [sections[sectionIndex + 1], sections[sectionIndex]];
+    onUpdate(newData);
+  };  
+
   const editTaskText = (sectionId: string, cardId: string, taskIndex: number, newText: string) => {
     const newData = { ...data };
     const section = newData.sections.find(s => s.id === sectionId)!;
@@ -259,7 +296,7 @@ export default function Dashboard({ data, onUpdate }: DashboardProps) {
               >
                 <button
                   onClick={() => toggleSection(section.id)}
-                  className="w-full flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-github-border/30 transition-colors text-left"
+                  className="w-full flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-github-border/30 transition-colors text-left group"
                 >
                   {expandedSections.has(section.id) ? <ChevronDown className="w-4 h-4 text-github-dim" /> : <ChevronRight className="w-4 h-4 text-github-dim" />}
                   {editingSection === section.id ? (
@@ -285,7 +322,28 @@ export default function Dashboard({ data, onUpdate }: DashboardProps) {
                       {section.title}
                     </span>
                   )}
-                  <span className="text-xs text-github-dim ml-auto">{section.cards.length} cards</span>
+
+                  {/* Section move arrows */}
+                  <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 ml-auto mr-2">
+                    <button
+                      onClick={(e) => { e.stopPropagation(); moveSectionUp(sIdx); }}
+                      disabled={sIdx === 0}
+                      className="p-1 rounded hover:bg-github-border text-github-dim hover:text-github-fg disabled:opacity-30 disabled:cursor-not-allowed"
+                      title="Move section up"
+                    >
+                      <ArrowUp className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); moveSectionDown(sIdx); }}
+                      disabled={sIdx === data.sections.length - 1}
+                      className="p-1 rounded hover:bg-github-border text-github-dim hover:text-github-fg disabled:opacity-30 disabled:cursor-not-allowed"
+                      title="Move section down"
+                    >
+                      <ArrowDown className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+
+                  <span className="text-xs text-github-dim">{section.cards.length} cards</span>
                 </button>
 
                 <AnimatePresence>
@@ -297,14 +355,14 @@ export default function Dashboard({ data, onUpdate }: DashboardProps) {
                       transition={{ duration: 0.2 }}
                       className="ml-4 overflow-hidden"
                     >
-                      {section.cards.map((card) => {
+                      {section.cards.map((card, cIdx) => {
                         const doneCount = card.tasks.filter(t => t.done && !t.cancelledReason).length;
                         const totalCount = card.tasks.length;
                         return (
                           <div key={card.id}>
                             <button
                               onClick={() => toggleCard(card.id)}
-                              className="w-full flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-github-border/30 transition-colors text-left"
+                              className="w-full flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-github-border/30 transition-colors text-left group"
                             >
                               {expandedCards.has(card.id) ? <ChevronDown className="w-3.5 h-3.5 text-github-dim" /> : <ChevronRight className="w-3.5 h-3.5 text-github-dim" />}
                               <span className="text-sm">{STATUS_EMOJI[card.status as keyof typeof STATUS_EMOJI] || "⚪"}</span>
@@ -332,7 +390,28 @@ export default function Dashboard({ data, onUpdate }: DashboardProps) {
                                   {card.name}
                                 </span>
                               )}
-                              <div className="ml-auto flex items-center gap-2">
+
+                              {/* Card move arrows */}
+                              <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 ml-auto mr-2">
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); moveCardUp(section.id, cIdx); }}
+                                  disabled={cIdx === 0}
+                                  className="p-1 rounded hover:bg-github-border text-github-dim hover:text-github-fg disabled:opacity-30 disabled:cursor-not-allowed"
+                                  title="Move card up"
+                                >
+                                  <ArrowUp className="w-3 h-3" />
+                                </button>
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); moveCardDown(section.id, cIdx); }}
+                                  disabled={cIdx === section.cards.length - 1}
+                                  className="p-1 rounded hover:bg-github-border text-github-dim hover:text-github-fg disabled:opacity-30 disabled:cursor-not-allowed"
+                                  title="Move card down"
+                                >
+                                  <ArrowDown className="w-3 h-3" />
+                                </button>
+                              </div>
+
+                              <div className="flex items-center gap-2">
                                 <div className="w-20 h-1.5 bg-github-bg rounded-full overflow-hidden">
                                   <div 
                                     className="h-full rounded-full transition-all duration-500"
