@@ -63,14 +63,13 @@ export default function GanttChart({ data }: GanttChartProps) {
     return result.sort((a, b) => a.start.getTime() - b.start.getTime());
   }, [data]);
 
-  const { minDate, maxDate, totalDays } = useMemo(() => {
-    if (items.length === 0) return { minDate: new Date(), maxDate: addDays(new Date(), 30), totalDays: 30 };
+  const { minDate, totalDays } = useMemo(() => {
+    if (items.length === 0) return { minDate: new Date(), totalDays: 30 };
     const min = new Date(Math.min(...items.map(i => i.start.getTime())));
     const max = new Date(Math.max(...items.map(i => i.end.getTime())));
     const padding = 7;
     return {
       minDate: addDays(min, -padding),
-      maxDate: addDays(max, padding),
       totalDays: differenceInDays(max, min) + padding * 2,
     };
   }, [items]);
@@ -168,8 +167,7 @@ export default function GanttChart({ data }: GanttChartProps) {
         <div className="w-48 border-r border-github-border bg-github-bg/50 overflow-y-auto shrink-0">
           <div className="absolute top-0 left-0 right-0 h-16 z-10" />
           <div className="pt-16">
-            {items.map((item, idx) => {
-              const y = idx * 48;
+            {items.map((item) => {
               return (
                 <div
                   key={item.id}
@@ -347,6 +345,7 @@ export default function GanttChart({ data }: GanttChartProps) {
           </div>
         </div>
       </div>
+    </div>
     </div>
   );
 }

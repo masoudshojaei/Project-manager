@@ -12,7 +12,9 @@ import {
   XCircle,
   ArrowRightCircle,
   CircleDashed,
-  AlertCircle
+  AlertCircle,
+  ArrowUp,
+  ArrowDown,
 } from "lucide-react";
 import type { ProjectData, Task } from "../types";
 import { STATUS_COLORS, STATUS_EMOJI } from "../types";
@@ -37,6 +39,8 @@ export default function Dashboard({ data, onUpdate }: DashboardProps) {
   const [editingCard, setEditingCard] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<"milestones" | "blockers">("milestones");
 
+  const [selectedMilestone, setSelectedMilestone] = useState<string | null>(null);
+  
   const stats = useMemo(() => {
     const totalTasks = data.sections.reduce((sum, s) => sum + s.cards.reduce((c, card) => c + card.tasks.length, 0), 0);
     const doneTasks = data.sections.flatMap(s => s.cards).flatMap(c => c.tasks).filter(t => t.done && !t.cancelledReason).length;
@@ -123,6 +127,55 @@ export default function Dashboard({ data, onUpdate }: DashboardProps) {
 
     onUpdate(newData);
     setContextMenu(null);
+  };
+
+  const moveTaskUp = (sectionId: string, cardId: string, taskIndex: number) => {
+    if (taskIndex === 0) return;
+    const newData = { ...data };
+    const section = newData.sections.find(s => s.id === sectionId)!;
+    const card = section.cards.find(c => c.id === cardId)!;
+    const tasks = card.tasks;
+
+    // Swap with previous
+    [tasks[taskIndex - 1], tasks[taskIndex]] = [tasks[taskIndex], tasks[taskIndex - 1]];
+
+    // Keep selection/editing state pointing to the correct task
+    if (selectedTask?.sectionId === sectionId && selectedTask?.cardId === cardId) {
+      if (selectedTask.taskIndex === taskIndex) setSelectedTask({ ...selectedTask, taskIndex: taskIndex - 1 });
+      else if (selectedTask.taskIndex === taskIndex - 1) setSelectedTask({ ...selectedTask, taskIndex: taskIndex });
+    }
+    if (editingTask?.sectionId === sectionId && editingTask?.cardId === cardId) {
+      if (editingTask.taskIndex === taskIndex) setEditingTask({ ...editingTask, taskIndex: taskIndex - 1 });
+      else if (editingTask.taskIndex === taskIndex - 1) setEditingTask({ ...editingTask, taskIndex: taskIndex });
+    }
+
+    onUpdate(newData);
+  };
+
+  const moveTaskDown = (sectionId: string, cardId: string, taskIndex: number) => {
+    const section = data.sections.find(s => s.id === sectionId)!;
+    const card = section.cards.find(c => c.id === cardId)!;
+    if (taskIndex >= card.tasks.length - 1) return;
+
+    const newData = { ...data };
+    const sec = newData.sections.find(s => s.id === sectionId)!;
+    const c = sec.cards.find(c => c.id === cardId)!;
+    const tasks = c.tasks;
+
+    // Swap with next
+    [tasks[taskIndex], tasks[taskIndex + 1]] = [tasks[taskIndex + 1], tasks[taskIndex]];
+
+    // Keep selection/editing state pointing to the correct task
+    if (selectedTask?.sectionId === sectionId && selectedTask?.cardId === cardId) {
+      if (selectedTask.taskIndex === taskIndex) setSelectedTask({ ...selectedTask, taskIndex: taskIndex + 1 });
+      else if (selectedTask.taskIndex === taskIndex + 1) setSelectedTask({ ...selectedTask, taskIndex: taskIndex });
+    }
+    if (editingTask?.sectionId === sectionId && editingTask?.cardId === cardId) {
+      if (editingTask.taskIndex === taskIndex) setEditingTask({ ...editingTask, taskIndex: taskIndex + 1 });
+      else if (editingTask.taskIndex === taskIndex + 1) setEditingTask({ ...editingTask, taskIndex: taskIndex });
+    }
+
+    onUpdate(newData);
   };
 
   const editTaskText = (sectionId: string, cardId: string, taskIndex: number, newText: string) => {
@@ -398,6 +451,25 @@ export default function Dashboard({ data, onUpdate }: DashboardProps) {
                                         )}
 
                                         <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 shrink-0">
+                                          {/* Move Up */}
+                                          <button
+                                            onClick={(e) => { e.stopPropagation(); moveTaskUp(section.id, card.id, tIdx); }}
+                                            disabled={tIdx === 0}
+                                            className="p-1 rounded hover:bg-github-border text-github-dim hover:text-github-fg disabled:opacity-30 disabled:cursor-not-allowed"
+                                            title="Move up"
+                                          >
+                                            <ArrowUp className="w-3 h-3" />
+                                          </button>
+
+                                          {/* Move Down */}
+                                          <button
+                                            onClick={(e) => { e.stopPropagation(); moveTaskDown(section.id, card.id, tIdx); }}
+                                            disabled={tIdx === card.tasks.length - 1}
+                                            className="p-1 rounded hover:bg-github-border text-github-dim hover:text-github-fg disabled:opacity-30 disabled:cursor-not-allowed"
+                                            title="Move down"
+                                          >
+                                            <ArrowDown className="w-3 h-3" />
+                                          </button>
                                           <button
                                             onClick={(e) => { e.stopPropagation(); setEditingTask({ sectionId: section.id, cardId: card.id, taskIndex: tIdx, text: task.text }); }}
                                             className="p-1 rounded hover:bg-github-border text-github-dim hover:text-github-fg"
