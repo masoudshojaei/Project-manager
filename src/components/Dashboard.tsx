@@ -215,6 +215,52 @@ export default function Dashboard({ data, onUpdate }: DashboardProps) {
     onUpdate(newData);
   };  
 
+  // ── Add / Delete Section ──
+  const addSection = () => {
+    const newData = { ...data };
+    const newId = `section-${Date.now()}`;
+    newData.sections.push({
+      id: newId,
+      title: "New Section",
+      cards: [],
+    });
+    onUpdate(newData);
+    setExpandedSections(prev => new Set(prev).add(newId));
+    setEditingSection(newId);
+  };
+
+  const deleteSection = (sectionId: string) => {
+    if (!confirm("Delete this section and all its cards?")) return;
+    const newData = { ...data };
+    newData.sections = newData.sections.filter(s => s.id !== sectionId);
+    onUpdate(newData);
+  };
+
+  // ── Add / Delete Card ──
+  const addCard = (sectionId: string) => {
+    const newData = { ...data };
+    const section = newData.sections.find(s => s.id === sectionId)!;
+    const newId = `card-${Date.now()}`;
+    section.cards.push({
+      id: newId,
+      name: "New Card",
+      status: "pending",
+      progress: 0,
+      tasks: [],
+    });
+    onUpdate(newData);
+    setExpandedCards(prev => new Set(prev).add(newId));
+    setEditingCard(newId);
+  };
+
+  const deleteCard = (sectionId: string, cardId: string) => {
+    if (!confirm("Delete this card and all its tasks?")) return;
+    const newData = { ...data };
+    const section = newData.sections.find(s => s.id === sectionId)!;
+    section.cards = section.cards.filter(c => c.id !== cardId);
+    onUpdate(newData);
+  };
+
   const editTaskText = (sectionId: string, cardId: string, taskIndex: number, newText: string) => {
     const newData = { ...data };
     const section = newData.sections.find(s => s.id === sectionId)!;
@@ -323,7 +369,7 @@ export default function Dashboard({ data, onUpdate }: DashboardProps) {
                     </span>
                   )}
 
-                  {/* Section move arrows */}
+                  {/* Section move arrows + delete */}
                   <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 ml-auto mr-2">
                     <button
                       onClick={(e) => { e.stopPropagation(); moveSectionUp(sIdx); }}
@@ -340,6 +386,14 @@ export default function Dashboard({ data, onUpdate }: DashboardProps) {
                       title="Move section down"
                     >
                       <ArrowDown className="w-3.5 h-3.5" />
+                    </button>
+                    <div className="w-px h-4 bg-github-border/50 mx-1" />
+                    <button
+                      onClick={(e) => { e.stopPropagation(); deleteSection(section.id); }}
+                      className="p-1 rounded hover:bg-github-red/20 text-github-dim hover:text-github-red"
+                      title="Delete section"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
                     </button>
                   </div>
 
@@ -391,7 +445,7 @@ export default function Dashboard({ data, onUpdate }: DashboardProps) {
                                 </span>
                               )}
 
-                              {/* Card move arrows */}
+                              {/* Card move arrows + delete */}
                               <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 ml-auto mr-2">
                                 <button
                                   onClick={(e) => { e.stopPropagation(); moveCardUp(section.id, cIdx); }}
@@ -408,6 +462,14 @@ export default function Dashboard({ data, onUpdate }: DashboardProps) {
                                   title="Move card down"
                                 >
                                   <ArrowDown className="w-3 h-3" />
+                                </button>
+                                <div className="w-px h-4 bg-github-border/50 mx-1" />
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); deleteCard(section.id, card.id); }}
+                                  className="p-1 rounded hover:bg-github-red/20 text-github-dim hover:text-github-red"
+                                  title="Delete card"
+                                >
+                                  <Trash2 className="w-3 h-3" />
                                 </button>
                               </div>
 
@@ -598,11 +660,28 @@ export default function Dashboard({ data, onUpdate }: DashboardProps) {
                           </div>
                         );
                       })}
+                      {/* Add Card Button */}
+                      <button
+                        onClick={() => addCard(section.id)}
+                        className="flex items-center gap-2 px-3 py-2 ml-4 mt-1 text-xs text-github-dim hover:text-github-blue transition-colors"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        Add card
+                      </button>
                     </motion.div>
                   )}
                 </AnimatePresence>
               </motion.div>
             ))}
+
+            {/* Add Section Button */}
+            <button
+              onClick={addSection}
+              className="flex items-center gap-2 px-3 py-2 mt-3 text-sm text-github-dim hover:text-github-blue transition-colors border border-dashed border-github-border rounded-lg hover:border-github-blue/50 w-full"
+            >
+              <Plus className="w-4 h-4" />
+              Add section
+            </button>
           </div>
         </div>
       </div>
