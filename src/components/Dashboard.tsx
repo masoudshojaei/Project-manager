@@ -18,6 +18,7 @@ import {
   FolderPlus,
   FilePlus,
   ListPlus,
+  PlayCircle,
 } from "lucide-react";
 import type { ProjectData, Task } from "../types";
 import { STATUS_COLORS, STATUS_EMOJI } from "../types";
@@ -37,6 +38,35 @@ interface AddMenuItem {
   color?: string;
 }
 
+// ── STATUS HELPERS ──
+
+function getTaskStatus(task: Task): "completed" | "cancelled" | "inprogress" | "pending" {
+  if (task.done) return "completed";
+  if (task.cancelledReason) return "cancelled";
+  if (task.actStart) return "inprogress";
+  return "pending";
+}
+
+function getStatusBg(status: string): string {
+  switch (status) {
+    case "completed": return "#23863620";   // green with 20% opacity
+    case "inprogress": return "#d2992220";  // yellow with 20% opacity
+    case "pending": return "#f8514920";     // red with 20% opacity
+    case "cancelled": return "#8b949e20";   // gray with 20% opacity
+    default: return "transparent";
+  }
+}
+
+function getStatusBorder(status: string): string {
+  switch (status) {
+    case "completed": return "#23863640";
+    case "inprogress": return "#d2992240";
+    case "pending": return "#f8514940";
+    case "cancelled": return "#8b949e40";
+    default: return "transparent";
+  }
+}
+
 export default function Dashboard({ data, onUpdate }: DashboardProps) {
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(data.sections.map(s => s.id)));
   const [expandedCards, setExpandedCards] = useState<Set<string>>(new Set(data.sections.flatMap(s => s.cards.map(c => c.id))));
@@ -52,12 +82,14 @@ export default function Dashboard({ data, onUpdate }: DashboardProps) {
 
   const [selectedMilestone, setSelectedMilestone] = useState<string | null>(null);
 
+  // ── FIXED STATS: count in-progress TASKS, not just milestones ──
   const stats = useMemo(() => {
-    const totalTasks = data.sections.reduce((sum, s) => sum + s.cards.reduce((c, card) => c + card.tasks.length, 0), 0);
-    const doneTasks = data.sections.flatMap(s => s.cards).flatMap(c => c.tasks).filter(t => t.done && !t.cancelledReason).length;
-    const inProgress = data.milestones.filter(m => m.status === "inprogress").length;
-    const pending = totalTasks - doneTasks - data.sections.flatMap(s => s.cards).flatMap(c => c.tasks).filter(t => t.cancelledReason).length;
-    const cancelled = data.sections.flatMap(s => s.cards).flatMap(c => c.tasks).filter(t => t.cancelledReason).length;
+    const allTasks = data.sections.flatMap(s => s.cards).flatMap(c => c.tasks);
+    const totalTasks = allTasks.length;
+    const doneTasks = allTasks.filter(t => t.done && !t.cancelledReason).length;
+    const inProgress = allTasks.filter(t => !t.done && !t.cancelledReason && t.actStart).length;
+    const cancelled = allTasks.filter(t => t.cancelledReason).length;
+    const pending = totalTasks - doneTasks - inProgress - cancelled;
     return { totalTasks, doneTasks, inProgress, pending, cancelled };
   }, [data]);
 
@@ -79,7 +111,12 @@ export default function Dashboard({ data, onUpdate }: DashboardProps) {
     const card = section.cards.find(c => c.id === cardId)!;
     const task = card.tasks[taskIndex];
     task.done = !task.done;
-    task.cancelledReason = undefined;
+    if (task.done) {
+      task.cancelledReason = undefined;
+      task.actEnd = new Date().toISOString().split("T")[0];
+    } else {
+      task.actEnd = undefined;
+    }
     recalcCard(card);
     onUpdate(newData);
   };
@@ -99,10 +136,26 @@ export default function Dashboard({ data, onUpdate }: DashboardProps) {
     const card = section.cards.find(c => c.id === cardId)!;
     const task = card.tasks[taskIndex];
 
-    if (status === "done") { task.done = true; task.cancelledReason = undefined; }
-    else if (status === "pending") { task.done = false; task.cancelledReason = undefined; }
-    else if (status === "cancelled") { task.done = false; task.cancelledReason = reason || "Cancelled"; }
-    else if (status === "inprogress") { task.done = false; task.cancelledReason = undefined; }
+    if (status === "done") {
+      task.done = true;
+      task.cancelledReason = undefined;
+      task.actStart = task.actStart || new Date().toISOString().split("T")[0];
+      task.actEnd = new Date().toISOString().split("T")[0];
+    } else if (status === "pending") {
+      task.done = false;
+      task.cancelledReason = undefined;
+      task.actStart = undefined;
+      task.actEnd = undefined;
+    } else if (status === "cancelled") {
+      task.done = false;
+      task.cancelledReason = reason || "Cancelled";
+      task.actEnd = undefined;
+    } else if (status === "inprogress") {
+      task.done = false;
+      task.cancelledReason = undefined;
+      task.actStart = task.actStart || new Date().toISOString().split("T")[0];
+      task.actEnd = undefined;
+    }
 
     recalcCard(card);
     onUpdate(newData);
@@ -375,7 +428,7 @@ export default function Dashboard({ data, onUpdate }: DashboardProps) {
       },
       {
         label: "Set In Progress",
-        icon: ArrowRightCircle,
+        icon: PlayCircle,
         action: () => setTaskStatus(sectionId, cardId, taskIndex, "inprogress"),
         color: "text-github-yellow",
       },
@@ -425,8 +478,8 @@ export default function Dashboard({ data, onUpdate }: DashboardProps) {
       <div className="w-16 h-16 rounded-2xl bg-github-border/20 flex items-center justify-center mb-4">
         <FolderPlus className="w-8 h-8 text-github-dim" />
       </div>
-      <h3 className="text-sm font-semibold text-github-fg mb-1">No Sections Yet</h3>
-      <p className="text-xs text-github-dim mb-4 max-w-[200px]">Create your first section to start organizing your project.</p>
+      <h3 className="text-base font-semibold text-github-fg mb-1">No Sections Yet</h3>
+      <p className="text-sm text-github-dim mb-4 max-w-[200px]">Create your first section to start organizing your project.</p>
       <button onClick={addSection} className="btn-primary text-sm py-2 px-4 flex items-center gap-2">
         <Plus className="w-4 h-4" /> Add Section
       </button>
@@ -442,10 +495,10 @@ export default function Dashboard({ data, onUpdate }: DashboardProps) {
       <div className="w-10 h-10 rounded-xl bg-github-border/10 flex items-center justify-center mb-2">
         <FilePlus className="w-5 h-5 text-github-dim" />
       </div>
-      <p className="text-xs text-github-dim mb-2">No cards in this section</p>
+      <p className="text-sm text-github-dim mb-2">No cards in this section</p>
       <button
         onClick={() => addCard(sectionId)}
-        className="text-xs text-github-blue hover:text-github-blue/80 flex items-center gap-1 transition-colors"
+        className="text-sm text-github-blue hover:text-github-blue/80 flex items-center gap-1 transition-colors"
       >
         <Plus className="w-3 h-3" /> Add Card
       </button>
@@ -461,10 +514,10 @@ export default function Dashboard({ data, onUpdate }: DashboardProps) {
       <div className="w-8 h-8 rounded-lg bg-github-border/10 flex items-center justify-center mb-2">
         <ListPlus className="w-4 h-4 text-github-dim" />
       </div>
-      <p className="text-xs text-github-dim mb-2">No tasks yet</p>
+      <p className="text-sm text-github-dim mb-2">No tasks yet</p>
       <button
         onClick={() => setAddingTask({ sectionId, cardId })}
-        className="text-xs text-github-green-bright hover:text-github-green-bright/80 flex items-center gap-1 transition-colors"
+        className="text-sm text-github-green-bright hover:text-github-green-bright/80 flex items-center gap-1 transition-colors"
       >
         <Plus className="w-3 h-3" /> Add Task
       </button>
@@ -486,12 +539,12 @@ export default function Dashboard({ data, onUpdate }: DashboardProps) {
         {/* Task Tree */}
         <div className="flex-1 glass-panel overflow-hidden flex flex-col">
           <div className="px-4 py-3 border-b border-github-border flex items-center justify-between shrink-0">
-            <h2 className="text-sm font-semibold text-white flex items-center gap-2">
+            <h2 className="text-base font-semibold text-white flex items-center gap-2">
               <CheckSquare className="w-4 h-4 text-github-blue" />
               Tasks & Progress
             </h2>
             <div className="flex items-center gap-3">
-              <span className="text-xs text-github-dim">{stats.totalTasks} total tasks</span>
+              <span className="text-sm text-github-dim">{stats.totalTasks} total tasks</span>
               <button
                 onClick={addSection}
                 className="p-1.5 rounded-lg hover:bg-github-border/50 text-github-dim hover:text-github-blue transition-colors"
@@ -534,11 +587,11 @@ export default function Dashboard({ data, onUpdate }: DashboardProps) {
                           if (e.key === "Enter") e.currentTarget.blur();
                           if (e.key === "Escape") setEditingSection(null);
                         }}
-                        className="input-field text-sm py-1 flex-1"
+                        className="input-field text-base py-1 flex-1"
                         onClick={(e) => e.stopPropagation()}
                       />
                     ) : (
-                      <span className="text-sm font-semibold text-github-fg cursor-pointer hover:text-github-blue" onClick={(e) => { e.stopPropagation(); setEditingSection(section.id); }}>
+                      <span className="text-base font-semibold text-github-fg cursor-pointer hover:text-github-blue" onClick={(e) => { e.stopPropagation(); setEditingSection(section.id); }}>
                         {section.title}
                       </span>
                     )}
@@ -578,7 +631,7 @@ export default function Dashboard({ data, onUpdate }: DashboardProps) {
                       </button>
                     </div>
 
-                    <span className="text-xs text-github-dim">{section.cards.length} cards</span>
+                    <span className="text-sm text-github-dim">{section.cards.length} cards</span>
                   </button>
 
                   <AnimatePresence>
@@ -621,11 +674,11 @@ export default function Dashboard({ data, onUpdate }: DashboardProps) {
                                         if (e.key === "Enter") e.currentTarget.blur();
                                         if (e.key === "Escape") setEditingCard(null);
                                       }}
-                                      className="input-field text-sm py-0.5 flex-1"
+                                      className="input-field text-base py-0.5 flex-1"
                                       onClick={(e) => e.stopPropagation()}
                                     />
                                   ) : (
-                                    <span className="text-sm font-medium text-github-fg cursor-pointer hover:text-github-blue" onClick={(e) => { e.stopPropagation(); setEditingCard(card.id); }}>
+                                    <span className="text-base font-medium text-github-fg cursor-pointer hover:text-github-blue" onClick={(e) => { e.stopPropagation(); setEditingCard(card.id); }}>
                                       {card.name}
                                     </span>
                                   )}
@@ -675,7 +728,7 @@ export default function Dashboard({ data, onUpdate }: DashboardProps) {
                                         }}
                                       />
                                     </div>
-                                    <span className="text-xs text-github-dim">{doneCount}/{totalCount}</span>
+                                    <span className="text-sm text-github-dim">{doneCount}/{totalCount}</span>
                                   </div>
                                 </button>
 
@@ -694,9 +747,9 @@ export default function Dashboard({ data, onUpdate }: DashboardProps) {
                                         card.tasks.map((task, tIdx) => {
                                           const isSelected = selectedTask?.sectionId === section.id && selectedTask?.cardId === card.id && selectedTask?.taskIndex === tIdx;
                                           const isEditing = editingTask?.sectionId === section.id && editingTask?.cardId === card.id && editingTask?.taskIndex === tIdx;
-                                          const taskStatus = task.done ? "completed" : task.cancelledReason ? "cancelled" : (task.actStart ? "inprogress" : "pending");
-                                          const statusColor = STATUS_COLORS[taskStatus as keyof typeof STATUS_COLORS];
-                                          const statusBg = `${statusColor}08`;
+                                          const taskStatus = getTaskStatus(task);
+                                          const statusBg = getStatusBg(taskStatus);
+                                          const statusBorder = getStatusBorder(taskStatus);
 
                                           return (
                                             <motion.div
@@ -704,19 +757,25 @@ export default function Dashboard({ data, onUpdate }: DashboardProps) {
                                               initial={{ opacity: 0 }}
                                               animate={{ opacity: 1 }}
                                               className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-all group border
-                                                ${isSelected ? "bg-github-blue/10 border-github-blue/30" : `border-transparent`}`}
-                                              style={{ backgroundColor: statusBg }}
+                                                ${isSelected ? "bg-github-blue/10 border-github-blue/30" : ""}`}
+                                              style={{
+                                                backgroundColor: isSelected ? undefined : statusBg,
+                                                borderColor: isSelected ? undefined : statusBorder,
+                                              }}
                                               onClick={() => setSelectedTask({ sectionId: section.id, cardId: card.id, taskIndex: tIdx })}
                                               onContextMenu={(e) => handleTaskContextMenu(e, section.id, card.id, tIdx)}
                                             >
+                                              {/* ── STATUS ICON ── */}
                                               <button
                                                 onClick={(e) => { e.stopPropagation(); toggleTask(section.id, card.id, tIdx); }}
                                                 className="shrink-0"
                                               >
-                                                {task.done ? (
+                                                {taskStatus === "completed" ? (
                                                   <CheckSquare className="w-4 h-4 text-github-green-bright" />
-                                                ) : task.cancelledReason ? (
+                                                ) : taskStatus === "cancelled" ? (
                                                   <XCircle className="w-4 h-4 text-github-dim" />
+                                                ) : taskStatus === "inprogress" ? (
+                                                  <PlayCircle className="w-4 h-4 text-github-yellow" />
                                                 ) : (
                                                   <Square className="w-4 h-4 text-github-dim hover:text-github-fg" />
                                                 )}
@@ -725,7 +784,7 @@ export default function Dashboard({ data, onUpdate }: DashboardProps) {
                                               {isEditing ? (
                                                 <input
                                                   autoFocus
-                                                  className="input-field text-sm py-0.5"
+                                                  className="input-field text-base py-0.5"
                                                   defaultValue={task.text}
                                                   onBlur={(e) => editTaskText(section.id, card.id, tIdx, e.target.value)}
                                                   onKeyDown={(e) => {
@@ -735,7 +794,7 @@ export default function Dashboard({ data, onUpdate }: DashboardProps) {
                                                 />
                                               ) : (
                                                 <div className="flex-1 min-w-0">
-                                                  <div className="text-sm font-medium truncate text-github-fg">{task.text}</div>
+                                                  <div className="text-base font-medium truncate text-github-fg">{task.text}</div>
 
                                                   <div className="mt-1 grid grid-cols-4 gap-2 text-xs">
                                                     <DateInput
@@ -827,7 +886,7 @@ export default function Dashboard({ data, onUpdate }: DashboardProps) {
                                           <Square className="w-4 h-4 text-github-dim" />
                                           <input
                                             autoFocus
-                                            className="input-field text-sm py-0.5 flex-1"
+                                            className="input-field text-base py-0.5 flex-1"
                                             placeholder="New task name..."
                                             value={newTaskText}
                                             onChange={(e) => setNewTaskText(e.target.value)}
@@ -841,7 +900,7 @@ export default function Dashboard({ data, onUpdate }: DashboardProps) {
                                       ) : (
                                         <button
                                           onClick={() => setAddingTask({ sectionId: section.id, cardId: card.id })}
-                                          className="flex items-center gap-2 px-3 py-1.5 ml-6 text-xs text-github-dim hover:text-github-blue transition-colors"
+                                          className="flex items-center gap-2 px-3 py-1.5 ml-6 text-sm text-github-dim hover:text-github-blue transition-colors"
                                         >
                                           <Plus className="w-3.5 h-3.5" />
                                           Add task
@@ -857,7 +916,7 @@ export default function Dashboard({ data, onUpdate }: DashboardProps) {
                         {/* Add Card Button */}
                         <button
                           onClick={() => addCard(section.id)}
-                          className="flex items-center gap-2 px-3 py-2 ml-4 mt-1 text-xs text-github-dim hover:text-github-blue transition-colors"
+                          className="flex items-center gap-2 px-3 py-2 ml-4 mt-1 text-sm text-github-dim hover:text-github-blue transition-colors"
                         >
                           <Plus className="w-3.5 h-3.5" />
                           Add card
@@ -873,7 +932,7 @@ export default function Dashboard({ data, onUpdate }: DashboardProps) {
             {data.sections.length > 0 && (
               <button
                 onClick={addSection}
-                className="flex items-center gap-2 px-3 py-2 mt-3 text-sm text-github-dim hover:text-github-blue transition-colors border border-dashed border-github-border rounded-lg hover:border-github-blue/50 w-full"
+                className="flex items-center gap-2 px-3 py-2 mt-3 text-base text-github-dim hover:text-github-blue transition-colors border border-dashed border-github-border rounded-lg hover:border-github-blue/50 w-full"
               >
                 <Plus className="w-4 h-4" />
                 Add section
@@ -893,19 +952,19 @@ export default function Dashboard({ data, onUpdate }: DashboardProps) {
                 className="flex items-center gap-2"
               >
                 {viewMode === "milestones" ? (
-                  <h2 className="text-sm font-semibold text-white flex items-center gap-2">
+                  <h2 className="text-base font-semibold text-white flex items-center gap-2">
                     <CalendarDays className="w-4 h-4 text-github-purple" />
                     Milestones
                   </h2>
                 ) : (
-                  <h2 className="text-sm font-semibold text-white flex items-center gap-2">
+                  <h2 className="text-base font-semibold text-white flex items-center gap-2">
                     <AlertCircle className="w-4 h-4 text-github-red" />
                     Blockers
                   </h2>
                 )}
               </button>
             </div>
-            <span className="text-xs text-github-dim">
+            <span className="text-sm text-github-dim">
               {viewMode === "milestones" ? `${data.milestones.length} milestones` : `${data.blockers.length} blockers`}
             </span>
           </div>
@@ -928,12 +987,12 @@ export default function Dashboard({ data, onUpdate }: DashboardProps) {
                     <span className="text-lg shrink-0">{STATUS_EMOJI[ms.status as keyof typeof STATUS_EMOJI] || "⚪"}</span>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between gap-2">
-                        <h3 className="text-sm font-semibold text-github-fg truncate">{ms.name.replace(/[📦📐🔲📤⚡⚙️🌐🖥️🔋🧪📚🚀🏁]/g, "").trim()}</h3>
-                        <span className={`status-badge text-xs shrink-0 status-${ms.status}`}>
+                        <h3 className="text-base font-semibold text-github-fg truncate">{ms.name.replace(/[📦📐🔲📤⚡⚙️🌐🖥️🔋🧪📚🚀🏁]/g, "").trim()}</h3>
+                        <span className={`status-badge text-sm shrink-0 status-${ms.status}`}>
                           {ms.status}
                         </span>
                       </div>
-                      <div className="flex items-center gap-3 mt-1.5 text-xs text-github-dim">
+                      <div className="flex items-center gap-3 mt-1.5 text-sm text-github-dim">
                         <span>{ms.category}</span>
                         {ms.estEnd && <span className="flex items-center gap-1"><CalendarDays className="w-3 h-3" /> Est: {ms.estEnd}</span>}
                         {ms.actEnd && <span className="flex items-center gap-1 text-github-green-bright"><CheckSquare className="w-3 h-3" /> Done: {ms.actEnd}</span>}
@@ -965,13 +1024,13 @@ export default function Dashboard({ data, onUpdate }: DashboardProps) {
                         className="mt-3 pt-3 border-t border-github-border overflow-hidden"
                       >
                         <div className="flex gap-2">
-                          <button onClick={() => setMilestoneStatus(ms.id, "completed")} className="btn-primary text-xs py-1.5 flex-1">
+                          <button onClick={() => setMilestoneStatus(ms.id, "completed")} className="btn-primary text-sm py-1.5 flex-1">
                             <CheckSquare className="w-3.5 h-3.5" /> Complete
                           </button>
-                          <button onClick={() => setMilestoneStatus(ms.id, "inprogress")} className="btn-secondary text-xs py-1.5 flex-1">
+                          <button onClick={() => setMilestoneStatus(ms.id, "inprogress")} className="btn-secondary text-sm py-1.5 flex-1">
                             <ArrowRightCircle className="w-3.5 h-3.5" /> In Progress
                           </button>
-                          <button onClick={() => setMilestoneStatus(ms.id, "pending")} className="btn-secondary text-xs py-1.5 flex-1">
+                          <button onClick={() => setMilestoneStatus(ms.id, "pending")} className="btn-secondary text-sm py-1.5 flex-1">
                             <CircleDashed className="w-3.5 h-3.5" /> Pending
                           </button>
                         </div>
@@ -995,10 +1054,10 @@ export default function Dashboard({ data, onUpdate }: DashboardProps) {
                       style={{ backgroundColor: blocker.color || "#f85149" }}
                     />
                     <div className="flex-1 min-w-0">
-                      <h3 className="text-sm font-semibold text-github-fg truncate">{blocker.title}</h3>
-                      <p className="text-xs text-github-dim mt-1">{blocker.description}</p>
+                      <h3 className="text-base font-semibold text-github-fg truncate">{blocker.title}</h3>
+                      <p className="text-sm text-github-dim mt-1">{blocker.description}</p>
                       {blocker.affects && (
-                        <p className="text-xs text-github-dim mt-1.5"><strong>Affects:</strong> {blocker.affects}</p>
+                        <p className="text-sm text-github-dim mt-1.5"><strong>Affects:</strong> {blocker.affects}</p>
                       )}
                     </div>
                   </div>
@@ -1071,7 +1130,7 @@ function StatCard({ label, value, color, bg, border, icon: Icon }: { label: stri
       </div>
       <div>
         <div className={`text-2xl font-bold ${color}`}>{value}</div>
-        <div className="text-xs text-github-dim">{label}</div>
+        <div className="text-sm text-github-dim">{label}</div>
       </div>
     </motion.div>
   );
