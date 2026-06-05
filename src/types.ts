@@ -13,7 +13,7 @@ export interface Task {
 export interface Card {
   id: string;
   name: string;
-  status: string;
+  status: "pending" | "inprogress" | "completed";
   progress: number;
   tasks: Task[];
 }
@@ -24,59 +24,28 @@ export interface Section {
   cards: Card[];
 }
 
-export interface Milestone {
-  id: string;
-  name: string;
-  category: string;
-  status: string;
-  estEnd?: string;
-  actEnd?: string;
-  variance?: string;
-  progress: number;
-}
-
-export interface Blocker {
-  id: string;
-  title: string;
-  description: string;
-  affects?: string;
-  color?: string;
-}
-
-export interface ProjectMeta {
-  title: string;
-  owner: string;
-  focus: string;
-  mcu?: string;
-  display?: string;
-  ram?: string;
-  power?: string;
-  comm?: string;
-  targetUsers?: string;
-}
-
+// Backward-compatible: old saved files may have these extra fields
 export interface ProjectData {
   sections: Section[];
-  milestones: Milestone[];
-  blockers: Blocker[];
-  lastUpdated: string;
-  meta: ProjectMeta;
+  // Legacy fields from old format — kept for backward compatibility
+  milestones?: unknown[];
+  blockers?: unknown[];
+  meta?: Record<string, unknown>;
+  lastUpdated?: string;
 }
 
-export type TabType = "dashboard" | "gantt" | "blockers";
+export type TabType = "dashboard" | "gantt";
 
 export const STATUS_COLORS = {
-  pending: "#f85149",
+  completed: "#238636",
   inprogress: "#d29922",
-  completed: "#3fb950",
-  missed: "#a371f7",
-  cancelled: "#6e7681",
+  pending: "#f85149",
+  cancelled: "#8b949e",
 };
 
 export const STATUS_EMOJI = {
-  pending: "🔴",
+  completed: "✅",
   inprogress: "🟡",
-  completed: "🟢",
-  missed: "🟣",
-  cancelled: "⚫",
+  pending: "🔴",
+  cancelled: "⚪",
 };

@@ -5,14 +5,12 @@ import {
   ChevronDown,
   CheckSquare,
   Square,
-  CalendarDays,
   Plus,
   Trash2,
   Edit3,
   XCircle,
   ArrowRightCircle,
   CircleDashed,
-  AlertCircle,
   ArrowUp,
   ArrowDown,
   FolderPlus,
@@ -30,12 +28,30 @@ interface DashboardProps {
   onUpdate: (data: ProjectData) => void;
 }
 
-// Context menu types
 interface AddMenuItem {
   label: string;
   icon: React.ElementType;
   action: () => void;
   color?: string;
+}
+
+// ── DATE VALIDATION ──
+
+function validateDates(start?: string, end?: string): boolean {
+  if (!start || !end) return true;
+  return new Date(start) <= new Date(end);
+}
+
+function validateTaskDates(task: Task): boolean {
+  if (!validateDates(task.estStart, task.estEnd)) {
+    alert("Estimated start date must be before or equal to estimated end date.");
+    return false;
+  }
+  if (!validateDates(task.actStart, task.actEnd)) {
+    alert("Actual start date must be before or equal to actual end date.");
+    return false;
+  }
+  return true;
 }
 
 // ── STATUS HELPERS ──
@@ -49,10 +65,10 @@ function getTaskStatus(task: Task): "completed" | "cancelled" | "inprogress" | "
 
 function getStatusBg(status: string): string {
   switch (status) {
-    case "completed": return "#23863620";   // green with 20% opacity
-    case "inprogress": return "#d2992220";  // yellow with 20% opacity
-    case "pending": return "#f8514920";     // red with 20% opacity
-    case "cancelled": return "#8b949e20";   // gray with 20% opacity
+    case "completed": return "#23863620";
+    case "inprogress": return "#d2992220";
+    case "pending": return "#f8514920";
+    case "cancelled": return "#8b949e20";
     default: return "transparent";
   }
 }
@@ -78,11 +94,7 @@ export default function Dashboard({ data, onUpdate }: DashboardProps) {
   const [newTaskText, setNewTaskText] = useState("");
   const [editingSection, setEditingSection] = useState<string | null>(null);
   const [editingCard, setEditingCard] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<"milestones" | "blockers">("milestones");
 
-  const [selectedMilestone, setSelectedMilestone] = useState<string | null>(null);
-
-  // ── FIXED STATS: count in-progress TASKS, not just milestones ──
   const stats = useMemo(() => {
     const allTasks = data.sections.flatMap(s => s.cards).flatMap(c => c.tasks);
     const totalTasks = allTasks.length;
@@ -245,16 +257,10 @@ export default function Dashboard({ data, onUpdate }: DashboardProps) {
     onUpdate(newData);
   };
 
-  // ── ADD OPERATIONS ──
-
   const addSection = () => {
     const newData = { ...data };
     const newId = `section-${Date.now()}`;
-    newData.sections.push({
-      id: newId,
-      title: "New Section",
-      cards: [],
-    });
+    newData.sections.push({ id: newId, title: "New Section", cards: [] });
     onUpdate(newData);
     setExpandedSections(prev => new Set(prev).add(newId));
     setEditingSection(newId);
@@ -264,13 +270,7 @@ export default function Dashboard({ data, onUpdate }: DashboardProps) {
     const newData = { ...data };
     const section = newData.sections.find(s => s.id === sectionId)!;
     const newId = `card-${Date.now()}`;
-    section.cards.push({
-      id: newId,
-      name: "New Card",
-      status: "pending",
-      progress: 0,
-      tasks: [],
-    });
+    section.cards.push({ id: newId, name: "New Card", status: "pending", progress: 0, tasks: [] });
     onUpdate(newData);
     setExpandedCards(prev => new Set(prev).add(newId));
     setEditingCard(newId);
@@ -322,54 +322,17 @@ export default function Dashboard({ data, onUpdate }: DashboardProps) {
     setEditingTask(null);
   };
 
-  const setMilestoneStatus = (milestoneId: string, status: string) => {
-    const newData = { ...data };
-    const ms = newData.milestones.find(m => m.id === milestoneId)!;
-    ms.status = status;
-    ms.progress = status === "completed" ? 100 : status === "inprogress" ? 50 : 0;
-    if (status === "completed") {
-      ms.actEnd = new Date().toISOString().split("T")[0];
-    } else {
-      ms.actEnd = undefined;
-    }
-    onUpdate(newData);
-    setSelectedMilestone(null);
-  };
-
   // ── CONTEXT MENU BUILDERS ──
 
   const handleSectionContextMenu = (e: React.MouseEvent, sectionId: string, sectionIndex: number) => {
     e.preventDefault();
     const items: AddMenuItem[] = [
-      {
-        label: "Add Card",
-        icon: FilePlus,
-        action: () => { addCard(sectionId); setContextMenu(null); },
-        color: "text-github-blue",
-      },
-      {
-        label: "Add Section Below",
-        icon: FolderPlus,
-        action: () => { addSection(); setContextMenu(null); },
-        color: "text-github-purple",
-      },
-      {
-        label: "Move Section Up",
-        icon: ArrowUp,
-        action: () => { moveSectionUp(sectionIndex); setContextMenu(null); },
-      },
-      {
-        label: "Move Section Down",
-        icon: ArrowDown,
-        action: () => { moveSectionDown(sectionIndex); setContextMenu(null); },
-      },
+      { label: "Add Card", icon: FilePlus, action: () => { addCard(sectionId); setContextMenu(null); }, color: "text-github-blue" },
+      { label: "Add Section Below", icon: FolderPlus, action: () => { addSection(); setContextMenu(null); }, color: "text-github-purple" },
+      { label: "Move Section Up", icon: ArrowUp, action: () => { moveSectionUp(sectionIndex); setContextMenu(null); } },
+      { label: "Move Section Down", icon: ArrowDown, action: () => { moveSectionDown(sectionIndex); setContextMenu(null); } },
       { label: "—", icon: () => null, action: () => {} },
-      {
-        label: "Delete Section",
-        icon: Trash2,
-        action: () => { deleteSection(sectionId); setContextMenu(null); },
-        color: "text-github-red",
-      },
+      { label: "Delete Section", icon: Trash2, action: () => { deleteSection(sectionId); setContextMenu(null); }, color: "text-github-red" },
     ];
     setContextMenu({ x: e.clientX, y: e.clientY, items });
   };
@@ -377,35 +340,12 @@ export default function Dashboard({ data, onUpdate }: DashboardProps) {
   const handleCardContextMenu = (e: React.MouseEvent, sectionId: string, cardId: string, cardIndex: number) => {
     e.preventDefault();
     const items: AddMenuItem[] = [
-      {
-        label: "Add Task",
-        icon: ListPlus,
-        action: () => { setAddingTask({ sectionId, cardId }); setContextMenu(null); },
-        color: "text-github-green-bright",
-      },
-      {
-        label: "Add Card Below",
-        icon: FilePlus,
-        action: () => { addCard(sectionId); setContextMenu(null); },
-        color: "text-github-blue",
-      },
-      {
-        label: "Move Card Up",
-        icon: ArrowUp,
-        action: () => { moveCardUp(sectionId, cardIndex); setContextMenu(null); },
-      },
-      {
-        label: "Move Card Down",
-        icon: ArrowDown,
-        action: () => { moveCardDown(sectionId, cardIndex); setContextMenu(null); },
-      },
+      { label: "Add Task", icon: ListPlus, action: () => { setAddingTask({ sectionId, cardId }); setContextMenu(null); }, color: "text-github-green-bright" },
+      { label: "Add Card Below", icon: FilePlus, action: () => { addCard(sectionId); setContextMenu(null); }, color: "text-github-blue" },
+      { label: "Move Card Up", icon: ArrowUp, action: () => { moveCardUp(sectionId, cardIndex); setContextMenu(null); } },
+      { label: "Move Card Down", icon: ArrowDown, action: () => { moveCardDown(sectionId, cardIndex); setContextMenu(null); } },
       { label: "—", icon: () => null, action: () => {} },
-      {
-        label: "Delete Card",
-        icon: Trash2,
-        action: () => { deleteCard(sectionId, cardId); setContextMenu(null); },
-        color: "text-github-red",
-      },
+      { label: "Delete Card", icon: Trash2, action: () => { deleteCard(sectionId, cardId); setContextMenu(null); }, color: "text-github-red" },
     ];
     setContextMenu({ x: e.clientX, y: e.clientY, items });
   };
@@ -413,68 +353,37 @@ export default function Dashboard({ data, onUpdate }: DashboardProps) {
   const handleTaskContextMenu = (e: React.MouseEvent, sectionId: string, cardId: string, taskIndex: number) => {
     e.preventDefault();
     const items: AddMenuItem[] = [
-      {
-        label: "Add Task Below",
-        icon: ListPlus,
-        action: () => { setAddingTask({ sectionId, cardId }); setContextMenu(null); },
-        color: "text-github-green-bright",
-      },
+      { label: "Add Task Below", icon: ListPlus, action: () => { setAddingTask({ sectionId, cardId }); setContextMenu(null); }, color: "text-github-green-bright" },
       { label: "—", icon: () => null, action: () => {} },
-      {
-        label: "Mark Complete",
-        icon: CheckSquare,
-        action: () => setTaskStatus(sectionId, cardId, taskIndex, "done"),
-        color: "text-github-green-bright",
-      },
-      {
-        label: "Set In Progress",
-        icon: PlayCircle,
-        action: () => setTaskStatus(sectionId, cardId, taskIndex, "inprogress"),
-        color: "text-github-yellow",
-      },
-      {
-        label: "Set Pending",
-        icon: CircleDashed,
-        action: () => setTaskStatus(sectionId, cardId, taskIndex, "pending"),
-        color: "text-github-red",
-      },
-      {
-        label: "Cancel Task...",
-        icon: XCircle,
-        action: () => {
-          const reason = prompt("Reason for cancellation:");
-          if (reason) setTaskStatus(sectionId, cardId, taskIndex, "cancelled", reason);
-        },
-        color: "text-github-dim",
-      },
+      { label: "Mark Complete", icon: CheckSquare, action: () => setTaskStatus(sectionId, cardId, taskIndex, "done"), color: "text-github-green-bright" },
+      { label: "Set In Progress", icon: PlayCircle, action: () => setTaskStatus(sectionId, cardId, taskIndex, "inprogress"), color: "text-github-yellow" },
+      { label: "Set Pending", icon: CircleDashed, action: () => setTaskStatus(sectionId, cardId, taskIndex, "pending"), color: "text-github-red" },
+      { label: "Cancel Task...", icon: XCircle, action: () => { const reason = prompt("Reason for cancellation:"); if (reason) setTaskStatus(sectionId, cardId, taskIndex, "cancelled", reason); }, color: "text-github-dim" },
       { label: "—", icon: () => null, action: () => {} },
-      {
-        label: "Edit Details...",
-        icon: Edit3,
-        action: () => {
-          setDetailsPanel({ sectionId, cardId, taskIndex });
-          setContextMenu(null);
-        },
-        color: "text-github-blue",
-      },
-      {
-        label: "Delete Task",
-        icon: Trash2,
-        action: () => deleteTask(sectionId, cardId, taskIndex),
-        color: "text-github-red",
-      },
+      { label: "Edit Details...", icon: Edit3, action: () => { setDetailsPanel({ sectionId, cardId, taskIndex }); setContextMenu(null); }, color: "text-github-blue" },
+      { label: "Delete Task", icon: Trash2, action: () => deleteTask(sectionId, cardId, taskIndex), color: "text-github-red" },
     ];
     setContextMenu({ x: e.clientX, y: e.clientY, items });
   };
 
-  // ── EMPTY STATE COMPONENTS ──
+  // ── DATE UPDATE WRAPPERS WITH VALIDATION ──
+
+  const updateTaskDate = (sectionId: string, cardId: string, taskIndex: number, field: keyof Task, value: string | undefined) => {
+    const newData = { ...data };
+    const section = newData.sections.find(s => s.id === sectionId)!;
+    const card = section.cards.find(c => c.id === cardId)!;
+    const task = { ...card.tasks[taskIndex], [field]: value };
+
+    if (!validateTaskDates(task)) return;
+
+    card.tasks[taskIndex] = task;
+    onUpdate(newData);
+  };
+
+  // ── EMPTY STATES ──
 
   const EmptySectionPlaceholder = () => (
-    <motion.div
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      className="flex flex-col items-center justify-center py-12 px-4 text-center"
-    >
+    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col items-center justify-center py-12 px-4 text-center">
       <div className="w-16 h-16 rounded-2xl bg-github-border/20 flex items-center justify-center mb-4">
         <FolderPlus className="w-8 h-8 text-github-dim" />
       </div>
@@ -487,38 +396,24 @@ export default function Dashboard({ data, onUpdate }: DashboardProps) {
   );
 
   const EmptyCardPlaceholder = ({ sectionId }: { sectionId: string }) => (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      className="flex flex-col items-center justify-center py-8 px-4 text-center ml-4 border border-dashed border-github-border/50 rounded-lg mt-2"
-    >
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col items-center justify-center py-8 px-4 text-center ml-4 border border-dashed border-github-border/50 rounded-lg mt-2">
       <div className="w-10 h-10 rounded-xl bg-github-border/10 flex items-center justify-center mb-2">
         <FilePlus className="w-5 h-5 text-github-dim" />
       </div>
       <p className="text-sm text-github-dim mb-2">No cards in this section</p>
-      <button
-        onClick={() => addCard(sectionId)}
-        className="text-sm text-github-blue hover:text-github-blue/80 flex items-center gap-1 transition-colors"
-      >
+      <button onClick={() => addCard(sectionId)} className="text-sm text-github-blue hover:text-github-blue/80 flex items-center gap-1 transition-colors">
         <Plus className="w-3 h-3" /> Add Card
       </button>
     </motion.div>
   );
 
   const EmptyTaskPlaceholder = ({ sectionId, cardId }: { sectionId: string; cardId: string }) => (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      className="flex flex-col items-center justify-center py-6 px-4 text-center ml-6 border border-dashed border-github-border/30 rounded-lg mt-1"
-    >
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col items-center justify-center py-6 px-4 text-center ml-6 border border-dashed border-github-border/30 rounded-lg mt-1">
       <div className="w-8 h-8 rounded-lg bg-github-border/10 flex items-center justify-center mb-2">
         <ListPlus className="w-4 h-4 text-github-dim" />
       </div>
       <p className="text-sm text-github-dim mb-2">No tasks yet</p>
-      <button
-        onClick={() => setAddingTask({ sectionId, cardId })}
-        className="text-sm text-github-green-bright hover:text-github-green-bright/80 flex items-center gap-1 transition-colors"
-      >
+      <button onClick={() => setAddingTask({ sectionId, cardId })} className="text-sm text-github-green-bright hover:text-github-green-bright/80 flex items-center gap-1 transition-colors">
         <Plus className="w-3 h-3" /> Add Task
       </button>
     </motion.div>
@@ -526,7 +421,7 @@ export default function Dashboard({ data, onUpdate }: DashboardProps) {
 
   return (
     <div className="h-full flex gap-4 p-4 overflow-hidden">
-      {/* Left Panel - Tasks */}
+      {/* Left Panel - Tasks (now full width) */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Stats Cards */}
         <div className="grid grid-cols-4 gap-3 mb-4 shrink-0">
@@ -545,11 +440,7 @@ export default function Dashboard({ data, onUpdate }: DashboardProps) {
             </h2>
             <div className="flex items-center gap-3">
               <span className="text-sm text-github-dim">{stats.totalTasks} total tasks</span>
-              <button
-                onClick={addSection}
-                className="p-1.5 rounded-lg hover:bg-github-border/50 text-github-dim hover:text-github-blue transition-colors"
-                title="Add Section"
-              >
+              <button onClick={addSection} className="p-1.5 rounded-lg hover:bg-github-border/50 text-github-dim hover:text-github-blue transition-colors" title="Add Section">
                 <FolderPlus className="w-4 h-4" />
               </button>
             </div>
@@ -560,12 +451,7 @@ export default function Dashboard({ data, onUpdate }: DashboardProps) {
               <EmptySectionPlaceholder />
             ) : (
               data.sections.map((section, sIdx) => (
-                <motion.div
-                  key={section.id}
-                  initial={{ opacity: 0, x: -10 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: sIdx * 0.05 }}
-                >
+                <motion.div key={section.id} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: sIdx * 0.05 }}>
                   <button
                     onClick={() => toggleSection(section.id)}
                     onContextMenu={(e) => handleSectionContextMenu(e, section.id, sIdx)}
@@ -576,17 +462,8 @@ export default function Dashboard({ data, onUpdate }: DashboardProps) {
                       <input
                         autoFocus
                         defaultValue={section.title}
-                        onBlur={(e) => {
-                          const newData = { ...data };
-                          const sec = newData.sections.find(s => s.id === section.id)!;
-                          sec.title = e.target.value || section.title;
-                          onUpdate(newData);
-                          setEditingSection(null);
-                        }}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") e.currentTarget.blur();
-                          if (e.key === "Escape") setEditingSection(null);
-                        }}
+                        onBlur={(e) => { const newData = { ...data }; const sec = newData.sections.find(s => s.id === section.id)!; sec.title = e.target.value || section.title; onUpdate(newData); setEditingSection(null); }}
+                        onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); if (e.key === "Escape") setEditingSection(null); }}
                         className="input-field text-base py-1 flex-1"
                         onClick={(e) => e.stopPropagation()}
                       />
@@ -595,54 +472,19 @@ export default function Dashboard({ data, onUpdate }: DashboardProps) {
                         {section.title}
                       </span>
                     )}
-
-                    {/* Section move arrows + delete */}
                     <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 ml-auto mr-2">
-                      <button
-                        onClick={(e) => { e.stopPropagation(); moveSectionUp(sIdx); }}
-                        disabled={sIdx === 0}
-                        className="p-1 rounded hover:bg-github-border text-github-dim hover:text-github-fg disabled:opacity-30 disabled:cursor-not-allowed"
-                        title="Move section up"
-                      >
-                        <ArrowUp className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        onClick={(e) => { e.stopPropagation(); moveSectionDown(sIdx); }}
-                        disabled={sIdx === data.sections.length - 1}
-                        className="p-1 rounded hover:bg-github-border text-github-dim hover:text-github-fg disabled:opacity-30 disabled:cursor-not-allowed"
-                        title="Move section down"
-                      >
-                        <ArrowDown className="w-3.5 h-3.5" />
-                      </button>
+                      <button onClick={(e) => { e.stopPropagation(); moveSectionUp(sIdx); }} disabled={sIdx === 0} className="p-1 rounded hover:bg-github-border text-github-dim hover:text-github-fg disabled:opacity-30 disabled:cursor-not-allowed" title="Move section up"><ArrowUp className="w-3.5 h-3.5" /></button>
+                      <button onClick={(e) => { e.stopPropagation(); moveSectionDown(sIdx); }} disabled={sIdx === data.sections.length - 1} className="p-1 rounded hover:bg-github-border text-github-dim hover:text-github-fg disabled:opacity-30 disabled:cursor-not-allowed" title="Move section down"><ArrowDown className="w-3.5 h-3.5" /></button>
                       <div className="w-px h-4 bg-github-border/50 mx-1" />
-                      <button
-                        onClick={(e) => { e.stopPropagation(); addCard(section.id); }}
-                        className="p-1 rounded hover:bg-github-blue/20 text-github-dim hover:text-github-blue"
-                        title="Add card"
-                      >
-                        <FilePlus className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        onClick={(e) => { e.stopPropagation(); deleteSection(section.id); }}
-                        className="p-1 rounded hover:bg-github-red/20 text-github-dim hover:text-github-red"
-                        title="Delete section"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                      <button onClick={(e) => { e.stopPropagation(); addCard(section.id); }} className="p-1 rounded hover:bg-github-blue/20 text-github-dim hover:text-github-blue" title="Add card"><FilePlus className="w-3.5 h-3.5" /></button>
+                      <button onClick={(e) => { e.stopPropagation(); deleteSection(section.id); }} className="p-1 rounded hover:bg-github-red/20 text-github-dim hover:text-github-red" title="Delete section"><Trash2 className="w-3.5 h-3.5" /></button>
                     </div>
-
                     <span className="text-sm text-github-dim">{section.cards.length} cards</span>
                   </button>
 
                   <AnimatePresence>
                     {expandedSections.has(section.id) && (
-                      <motion.div
-                        initial={{ height: 0, opacity: 0 }}
-                        animate={{ height: "auto", opacity: 1 }}
-                        exit={{ height: 0, opacity: 0 }}
-                        transition={{ duration: 0.2 }}
-                        className="ml-4 overflow-hidden"
-                      >
+                      <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.2 }} className="ml-4 overflow-hidden">
                         {section.cards.length === 0 ? (
                           <EmptyCardPlaceholder sectionId={section.id} />
                         ) : (
@@ -662,18 +504,8 @@ export default function Dashboard({ data, onUpdate }: DashboardProps) {
                                     <input
                                       autoFocus
                                       defaultValue={card.name}
-                                      onBlur={(e) => {
-                                        const newData = { ...data };
-                                        const sec = newData.sections.find(s => s.id === section.id)!;
-                                        const c = sec.cards.find(c => c.id === card.id)!;
-                                        c.name = e.target.value || card.name;
-                                        onUpdate(newData);
-                                        setEditingCard(null);
-                                      }}
-                                      onKeyDown={(e) => {
-                                        if (e.key === "Enter") e.currentTarget.blur();
-                                        if (e.key === "Escape") setEditingCard(null);
-                                      }}
+                                      onBlur={(e) => { const newData = { ...data }; const sec = newData.sections.find(s => s.id === section.id)!; const c = sec.cards.find(c => c.id === card.id)!; c.name = e.target.value || card.name; onUpdate(newData); setEditingCard(null); }}
+                                      onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); if (e.key === "Escape") setEditingCard(null); }}
                                       className="input-field text-base py-0.5 flex-1"
                                       onClick={(e) => e.stopPropagation()}
                                     />
@@ -682,51 +514,16 @@ export default function Dashboard({ data, onUpdate }: DashboardProps) {
                                       {card.name}
                                     </span>
                                   )}
-
-                                  {/* Card move arrows + delete */}
                                   <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 ml-auto mr-2">
-                                    <button
-                                      onClick={(e) => { e.stopPropagation(); moveCardUp(section.id, cIdx); }}
-                                      disabled={cIdx === 0}
-                                      className="p-1 rounded hover:bg-github-border text-github-dim hover:text-github-fg disabled:opacity-30 disabled:cursor-not-allowed"
-                                      title="Move card up"
-                                    >
-                                      <ArrowUp className="w-3 h-3" />
-                                    </button>
-                                    <button
-                                      onClick={(e) => { e.stopPropagation(); moveCardDown(section.id, cIdx); }}
-                                      disabled={cIdx === section.cards.length - 1}
-                                      className="p-1 rounded hover:bg-github-border text-github-dim hover:text-github-fg disabled:opacity-30 disabled:cursor-not-allowed"
-                                      title="Move card down"
-                                    >
-                                      <ArrowDown className="w-3 h-3" />
-                                    </button>
+                                    <button onClick={(e) => { e.stopPropagation(); moveCardUp(section.id, cIdx); }} disabled={cIdx === 0} className="p-1 rounded hover:bg-github-border text-github-dim hover:text-github-fg disabled:opacity-30 disabled:cursor-not-allowed" title="Move card up"><ArrowUp className="w-3 h-3" /></button>
+                                    <button onClick={(e) => { e.stopPropagation(); moveCardDown(section.id, cIdx); }} disabled={cIdx === section.cards.length - 1} className="p-1 rounded hover:bg-github-border text-github-dim hover:text-github-fg disabled:opacity-30 disabled:cursor-not-allowed" title="Move card down"><ArrowDown className="w-3 h-3" /></button>
                                     <div className="w-px h-4 bg-github-border/50 mx-1" />
-                                    <button
-                                      onClick={(e) => { e.stopPropagation(); setAddingTask({ sectionId: section.id, cardId: card.id }); }}
-                                      className="p-1 rounded hover:bg-github-green/20 text-github-dim hover:text-github-green-bright"
-                                      title="Add task"
-                                    >
-                                      <ListPlus className="w-3 h-3" />
-                                    </button>
-                                    <button
-                                      onClick={(e) => { e.stopPropagation(); deleteCard(section.id, card.id); }}
-                                      className="p-1 rounded hover:bg-github-red/20 text-github-dim hover:text-github-red"
-                                      title="Delete card"
-                                    >
-                                      <Trash2 className="w-3 h-3" />
-                                    </button>
+                                    <button onClick={(e) => { e.stopPropagation(); setAddingTask({ sectionId: section.id, cardId: card.id }); }} className="p-1 rounded hover:bg-github-green/20 text-github-dim hover:text-github-green-bright" title="Add task"><ListPlus className="w-3 h-3" /></button>
+                                    <button onClick={(e) => { e.stopPropagation(); deleteCard(section.id, card.id); }} className="p-1 rounded hover:bg-github-red/20 text-github-dim hover:text-github-red" title="Delete card"><Trash2 className="w-3 h-3" /></button>
                                   </div>
-
                                   <div className="flex items-center gap-2">
                                     <div className="w-20 h-1.5 bg-github-bg rounded-full overflow-hidden">
-                                      <div
-                                        className="h-full rounded-full transition-all duration-500"
-                                        style={{
-                                          width: `${card.progress}%`,
-                                          backgroundColor: STATUS_COLORS[card.status as keyof typeof STATUS_COLORS] || "#8b949e"
-                                        }}
-                                      />
+                                      <div className="h-full rounded-full transition-all duration-500" style={{ width: `${card.progress}%`, backgroundColor: STATUS_COLORS[card.status as keyof typeof STATUS_COLORS] || "#8b949e" }} />
                                     </div>
                                     <span className="text-sm text-github-dim">{doneCount}/{totalCount}</span>
                                   </div>
@@ -734,13 +531,7 @@ export default function Dashboard({ data, onUpdate }: DashboardProps) {
 
                                 <AnimatePresence>
                                   {expandedCards.has(card.id) && (
-                                    <motion.div
-                                      initial={{ height: 0, opacity: 0 }}
-                                      animate={{ height: "auto", opacity: 1 }}
-                                      exit={{ height: 0, opacity: 0 }}
-                                      transition={{ duration: 0.15 }}
-                                      className="ml-6 overflow-hidden"
-                                    >
+                                    <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.15 }} className="ml-6 overflow-hidden">
                                       {card.tasks.length === 0 ? (
                                         <EmptyTaskPlaceholder sectionId={section.id} cardId={card.id} />
                                       ) : (
@@ -756,20 +547,12 @@ export default function Dashboard({ data, onUpdate }: DashboardProps) {
                                               key={tIdx}
                                               initial={{ opacity: 0 }}
                                               animate={{ opacity: 1 }}
-                                              className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-all group border
-                                                ${isSelected ? "bg-github-blue/10 border-github-blue/30" : ""}`}
-                                              style={{
-                                                backgroundColor: isSelected ? undefined : statusBg,
-                                                borderColor: isSelected ? undefined : statusBorder,
-                                              }}
+                                              className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-all group border ${isSelected ? "bg-github-blue/10 border-github-blue/30" : ""}`}
+                                              style={{ backgroundColor: isSelected ? undefined : statusBg, borderColor: isSelected ? undefined : statusBorder }}
                                               onClick={() => setSelectedTask({ sectionId: section.id, cardId: card.id, taskIndex: tIdx })}
                                               onContextMenu={(e) => handleTaskContextMenu(e, section.id, card.id, tIdx)}
                                             >
-                                              {/* ── STATUS ICON ── */}
-                                              <button
-                                                onClick={(e) => { e.stopPropagation(); toggleTask(section.id, card.id, tIdx); }}
-                                                className="shrink-0"
-                                              >
+                                              <button onClick={(e) => { e.stopPropagation(); toggleTask(section.id, card.id, tIdx); }} className="shrink-0">
                                                 {taskStatus === "completed" ? (
                                                   <CheckSquare className="w-4 h-4 text-github-green-bright" />
                                                 ) : taskStatus === "cancelled" ? (
@@ -787,100 +570,31 @@ export default function Dashboard({ data, onUpdate }: DashboardProps) {
                                                   className="input-field text-base py-0.5"
                                                   defaultValue={task.text}
                                                   onBlur={(e) => editTaskText(section.id, card.id, tIdx, e.target.value)}
-                                                  onKeyDown={(e) => {
-                                                    if (e.key === "Enter") editTaskText(section.id, card.id, tIdx, e.currentTarget.value);
-                                                    if (e.key === "Escape") setEditingTask(null);
-                                                  }}
+                                                  onKeyDown={(e) => { if (e.key === "Enter") editTaskText(section.id, card.id, tIdx, e.currentTarget.value); if (e.key === "Escape") setEditingTask(null); }}
                                                 />
                                               ) : (
                                                 <div className="flex-1 min-w-0">
                                                   <div className="text-base font-medium truncate text-github-fg">{task.text}</div>
-
                                                   <div className="mt-1 grid grid-cols-4 gap-2 text-xs">
-                                                    <DateInput
-                                                      label="est-start"
-                                                      value={task.estStart}
-                                                      onChange={(v) => {
-                                                        const newData = { ...data };
-                                                        const sec = newData.sections.find(s => s.id === section.id)!;
-                                                        const c = sec.cards.find(c => c.id === card.id)!;
-                                                        c.tasks[tIdx].estStart = v;
-                                                        onUpdate(newData);
-                                                      }}
-                                                    />
-                                                    <DateInput
-                                                      label="est-end"
-                                                      value={task.estEnd}
-                                                      onChange={(v) => {
-                                                        const newData = { ...data };
-                                                        const sec = newData.sections.find(s => s.id === section.id)!;
-                                                        const c = sec.cards.find(c => c.id === card.id)!;
-                                                        c.tasks[tIdx].estEnd = v;
-                                                        onUpdate(newData);
-                                                      }}
-                                                    />
-                                                    <DateInput
-                                                      label="act-start"
-                                                      value={task.actStart}
-                                                      onChange={(v) => {
-                                                        const newData = { ...data };
-                                                        const sec = newData.sections.find(s => s.id === section.id)!;
-                                                        const c = sec.cards.find(c => c.id === card.id)!;
-                                                        c.tasks[tIdx].actStart = v;
-                                                        onUpdate(newData);
-                                                      }}
-                                                    />
-                                                    <DateInput
-                                                      label="act-end"
-                                                      value={task.actEnd}
-                                                      onChange={(v) => {
-                                                        const newData = { ...data };
-                                                        const sec = newData.sections.find(s => s.id === section.id)!;
-                                                        const c = sec.cards.find(c => c.id === card.id)!;
-                                                        c.tasks[tIdx].actEnd = v;
-                                                        onUpdate(newData);
-                                                      }}
-                                                    />
+                                                    <DateInput label="est-start" value={task.estStart} onChange={(v) => updateTaskDate(section.id, card.id, tIdx, "estStart", v)} />
+                                                    <DateInput label="est-end" value={task.estEnd} onChange={(v) => updateTaskDate(section.id, card.id, tIdx, "estEnd", v)} />
+                                                    <DateInput label="act-start" value={task.actStart} onChange={(v) => updateTaskDate(section.id, card.id, tIdx, "actStart", v)} />
+                                                    <DateInput label="act-end" value={task.actEnd} onChange={(v) => updateTaskDate(section.id, card.id, tIdx, "actEnd", v)} />
                                                   </div>
                                                 </div>
                                               )}
 
                                               <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 shrink-0">
-                                                <button
-                                                  onClick={(e) => { e.stopPropagation(); moveTaskUp(section.id, card.id, tIdx); }}
-                                                  disabled={tIdx === 0}
-                                                  className="p-1 rounded hover:bg-github-border text-github-dim hover:text-github-fg disabled:opacity-30 disabled:cursor-not-allowed"
-                                                  title="Move up"
-                                                >
-                                                  <ArrowUp className="w-3 h-3" />
-                                                </button>
-                                                <button
-                                                  onClick={(e) => { e.stopPropagation(); moveTaskDown(section.id, card.id, tIdx); }}
-                                                  disabled={tIdx === card.tasks.length - 1}
-                                                  className="p-1 rounded hover:bg-github-border text-github-dim hover:text-github-fg disabled:opacity-30 disabled:cursor-not-allowed"
-                                                  title="Move down"
-                                                >
-                                                  <ArrowDown className="w-3 h-3" />
-                                                </button>
-                                                <button
-                                                  onClick={(e) => { e.stopPropagation(); setEditingTask({ sectionId: section.id, cardId: card.id, taskIndex: tIdx, text: task.text }); }}
-                                                  className="p-1 rounded hover:bg-github-border text-github-dim hover:text-github-fg"
-                                                >
-                                                  <Edit3 className="w-3 h-3" />
-                                                </button>
-                                                <button
-                                                  onClick={(e) => { e.stopPropagation(); deleteTask(section.id, card.id, tIdx); }}
-                                                  className="p-1 rounded hover:bg-github-red/20 text-github-dim hover:text-github-red"
-                                                >
-                                                  <Trash2 className="w-3 h-3" />
-                                                </button>
+                                                <button onClick={(e) => { e.stopPropagation(); moveTaskUp(section.id, card.id, tIdx); }} disabled={tIdx === 0} className="p-1 rounded hover:bg-github-border text-github-dim hover:text-github-fg disabled:opacity-30 disabled:cursor-not-allowed" title="Move up"><ArrowUp className="w-3 h-3" /></button>
+                                                <button onClick={(e) => { e.stopPropagation(); moveTaskDown(section.id, card.id, tIdx); }} disabled={tIdx === card.tasks.length - 1} className="p-1 rounded hover:bg-github-border text-github-dim hover:text-github-fg disabled:opacity-30 disabled:cursor-not-allowed" title="Move down"><ArrowDown className="w-3 h-3" /></button>
+                                                <button onClick={(e) => { e.stopPropagation(); setEditingTask({ sectionId: section.id, cardId: card.id, taskIndex: tIdx, text: task.text }); }} className="p-1 rounded hover:bg-github-border text-github-dim hover:text-github-fg"><Edit3 className="w-3 h-3" /></button>
+                                                <button onClick={(e) => { e.stopPropagation(); deleteTask(section.id, card.id, tIdx); }} className="p-1 rounded hover:bg-github-red/20 text-github-dim hover:text-github-red"><Trash2 className="w-3 h-3" /></button>
                                               </div>
                                             </motion.div>
                                           );
                                         })
                                       )}
 
-                                      {/* Add Task Button */}
                                       {addingTask?.sectionId === section.id && addingTask?.cardId === card.id ? (
                                         <div className="flex items-center gap-2 px-3 py-1.5 ml-6">
                                           <Square className="w-4 h-4 text-github-dim" />
@@ -890,20 +604,13 @@ export default function Dashboard({ data, onUpdate }: DashboardProps) {
                                             placeholder="New task name..."
                                             value={newTaskText}
                                             onChange={(e) => setNewTaskText(e.target.value)}
-                                            onKeyDown={(e) => {
-                                              if (e.key === "Enter") addTask(section.id, card.id);
-                                              if (e.key === "Escape") { setAddingTask(null); setNewTaskText(""); }
-                                            }}
-                                            onBlur={() => { if (newTaskText.trim()) addTask(section.id, card.id); else { setAddingTask(null); setNewTaskText(""); }}}
+                                            onKeyDown={(e) => { if (e.key === "Enter") addTask(section.id, card.id); if (e.key === "Escape") { setAddingTask(null); setNewTaskText(""); } }}
+                                            onBlur={() => { if (newTaskText.trim()) addTask(section.id, card.id); else { setAddingTask(null); setNewTaskText(""); } }}
                                           />
                                         </div>
                                       ) : (
-                                        <button
-                                          onClick={() => setAddingTask({ sectionId: section.id, cardId: card.id })}
-                                          className="flex items-center gap-2 px-3 py-1.5 ml-6 text-sm text-github-dim hover:text-github-blue transition-colors"
-                                        >
-                                          <Plus className="w-3.5 h-3.5" />
-                                          Add task
+                                        <button onClick={() => setAddingTask({ sectionId: section.id, cardId: card.id })} className="flex items-center gap-2 px-3 py-1.5 ml-6 text-sm text-github-dim hover:text-github-blue transition-colors">
+                                          <Plus className="w-3.5 h-3.5" /> Add task
                                         </button>
                                       )}
                                     </motion.div>
@@ -913,13 +620,8 @@ export default function Dashboard({ data, onUpdate }: DashboardProps) {
                             );
                           })
                         )}
-                        {/* Add Card Button */}
-                        <button
-                          onClick={() => addCard(section.id)}
-                          className="flex items-center gap-2 px-3 py-2 ml-4 mt-1 text-sm text-github-dim hover:text-github-blue transition-colors"
-                        >
-                          <Plus className="w-3.5 h-3.5" />
-                          Add card
+                        <button onClick={() => addCard(section.id)} className="flex items-center gap-2 px-3 py-2 ml-4 mt-1 text-sm text-github-dim hover:text-github-blue transition-colors">
+                          <Plus className="w-3.5 h-3.5" /> Add card
                         </button>
                       </motion.div>
                     )}
@@ -927,142 +629,10 @@ export default function Dashboard({ data, onUpdate }: DashboardProps) {
                 </motion.div>
               ))
             )}
-
-            {/* Add Section Button */}
             {data.sections.length > 0 && (
-              <button
-                onClick={addSection}
-                className="flex items-center gap-2 px-3 py-2 mt-3 text-base text-github-dim hover:text-github-blue transition-colors border border-dashed border-github-border rounded-lg hover:border-github-blue/50 w-full"
-              >
-                <Plus className="w-4 h-4" />
-                Add section
+              <button onClick={addSection} className="flex items-center gap-2 px-3 py-2 mt-3 text-base text-github-dim hover:text-github-blue transition-colors border border-dashed border-github-border rounded-lg hover:border-github-blue/50 w-full">
+                <Plus className="w-4 h-4" /> Add section
               </button>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Right Panel - Milestones/Blockers */}
-      <div className="w-[420px] flex flex-col gap-4 shrink-0">
-        <div className="glass-panel flex-1 overflow-hidden flex flex-col">
-          <div className="px-4 py-3 border-b border-github-border flex items-center justify-between shrink-0">
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setViewMode(viewMode === "milestones" ? "blockers" : "milestones")}
-                className="flex items-center gap-2"
-              >
-                {viewMode === "milestones" ? (
-                  <h2 className="text-base font-semibold text-white flex items-center gap-2">
-                    <CalendarDays className="w-4 h-4 text-github-purple" />
-                    Milestones
-                  </h2>
-                ) : (
-                  <h2 className="text-base font-semibold text-white flex items-center gap-2">
-                    <AlertCircle className="w-4 h-4 text-github-red" />
-                    Blockers
-                  </h2>
-                )}
-              </button>
-            </div>
-            <span className="text-sm text-github-dim">
-              {viewMode === "milestones" ? `${data.milestones.length} milestones` : `${data.blockers.length} blockers`}
-            </span>
-          </div>
-
-          <div className="flex-1 overflow-y-auto p-2">
-            {viewMode === "milestones" ? (
-              data.milestones.map((ms, idx) => (
-                <motion.div
-                  key={ms.id}
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: idx * 0.03 }}
-                  className={`p-3 rounded-lg mb-2 cursor-pointer transition-all border
-                    ${selectedMilestone === ms.id
-                      ? "bg-github-blue/10 border-github-blue/30"
-                      : "bg-github-card/50 border-github-border/50 hover:border-github-border"}`}
-                  onClick={() => setSelectedMilestone(selectedMilestone === ms.id ? null : ms.id)}
-                >
-                  <div className="flex items-start gap-3">
-                    <span className="text-lg shrink-0">{STATUS_EMOJI[ms.status as keyof typeof STATUS_EMOJI] || "⚪"}</span>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between gap-2">
-                        <h3 className="text-base font-semibold text-github-fg truncate">{ms.name.replace(/[📦📐🔲📤⚡⚙️🌐🖥️🔋🧪📚🚀🏁]/g, "").trim()}</h3>
-                        <span className={`status-badge text-sm shrink-0 status-${ms.status}`}>
-                          {ms.status}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-3 mt-1.5 text-sm text-github-dim">
-                        <span>{ms.category}</span>
-                        {ms.estEnd && <span className="flex items-center gap-1"><CalendarDays className="w-3 h-3" /> Est: {ms.estEnd}</span>}
-                        {ms.actEnd && <span className="flex items-center gap-1 text-github-green-bright"><CheckSquare className="w-3 h-3" /> Done: {ms.actEnd}</span>}
-                        {ms.variance && <span className={`${ms.variance.startsWith("+") ? "text-github-red" : "text-github-green-bright"}`}>{ms.variance}</span>}
-                      </div>
-
-                      {/* Progress Bar */}
-                      <div className="mt-2">
-                        <div className="w-full h-1.5 bg-github-bg rounded-full overflow-hidden">
-                          <div
-                            className="h-full rounded-full transition-all duration-500"
-                            style={{
-                              width: `${ms.progress}%`,
-                              backgroundColor: STATUS_COLORS[ms.status as keyof typeof STATUS_COLORS] || "#8b949e"
-                            }}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Milestone Actions */}
-                  <AnimatePresence>
-                    {selectedMilestone === ms.id && (
-                      <motion.div
-                        initial={{ height: 0, opacity: 0 }}
-                        animate={{ height: "auto", opacity: 1 }}
-                        exit={{ height: 0, opacity: 0 }}
-                        className="mt-3 pt-3 border-t border-github-border overflow-hidden"
-                      >
-                        <div className="flex gap-2">
-                          <button onClick={() => setMilestoneStatus(ms.id, "completed")} className="btn-primary text-sm py-1.5 flex-1">
-                            <CheckSquare className="w-3.5 h-3.5" /> Complete
-                          </button>
-                          <button onClick={() => setMilestoneStatus(ms.id, "inprogress")} className="btn-secondary text-sm py-1.5 flex-1">
-                            <ArrowRightCircle className="w-3.5 h-3.5" /> In Progress
-                          </button>
-                          <button onClick={() => setMilestoneStatus(ms.id, "pending")} className="btn-secondary text-sm py-1.5 flex-1">
-                            <CircleDashed className="w-3.5 h-3.5" /> Pending
-                          </button>
-                        </div>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </motion.div>
-              ))
-            ) : (
-              data.blockers.map((blocker, idx) => (
-                <motion.div
-                  key={blocker.id}
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: idx * 0.03 }}
-                  className="p-3 rounded-lg mb-2 transition-all border bg-github-card/50 border-github-border/50 hover:border-github-border"
-                >
-                  <div className="flex items-start gap-3">
-                    <div
-                      className="w-3 h-3 rounded-full mt-1 shrink-0"
-                      style={{ backgroundColor: blocker.color || "#f85149" }}
-                    />
-                    <div className="flex-1 min-w-0">
-                      <h3 className="text-base font-semibold text-github-fg truncate">{blocker.title}</h3>
-                      <p className="text-sm text-github-dim mt-1">{blocker.description}</p>
-                      {blocker.affects && (
-                        <p className="text-sm text-github-dim mt-1.5"><strong>Affects:</strong> {blocker.affects}</p>
-                      )}
-                    </div>
-                  </div>
-                </motion.div>
-              ))
             )}
           </div>
         </div>
@@ -1072,10 +642,7 @@ export default function Dashboard({ data, onUpdate }: DashboardProps) {
       <AnimatePresence>
         {contextMenu && (
           <>
-            <div
-              className="fixed inset-0 z-40"
-              onClick={() => setContextMenu(null)}
-            />
+            <div className="fixed inset-0 z-40" onClick={() => setContextMenu(null)} />
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
@@ -1090,8 +657,7 @@ export default function Dashboard({ data, onUpdate }: DashboardProps) {
                   <button
                     key={i}
                     onClick={item.action}
-                    className={`w-full px-4 py-2 text-left text-sm flex items-center gap-2 transition-colors
-                      ${item.color ? `hover:bg-${item.color.replace("text-", "")}/10 ${item.color}` : "text-github-fg hover:bg-github-border/30 hover:text-github-fg"}`}
+                    className={`w-full px-4 py-2 text-left text-sm flex items-center gap-2 transition-colors ${item.color ? `hover:bg-${item.color.replace("text-", "")}/10 ${item.color}` : "text-github-fg hover:bg-github-border/30 hover:text-github-fg"}`}
                   >
                     <item.icon className="w-4 h-4" /> {item.label}
                   </button>
@@ -1121,10 +687,7 @@ export default function Dashboard({ data, onUpdate }: DashboardProps) {
 
 function StatCard({ label, value, color, bg, border, icon: Icon }: { label: string; value: number; color: string; bg: string; border: string; icon: React.ElementType }) {
   return (
-    <motion.div
-      whileHover={{ scale: 1.02 }}
-      className={`${bg} ${border} border rounded-xl p-4 flex items-center gap-3`}
-    >
+    <motion.div whileHover={{ scale: 1.02 }} className={`${bg} ${border} border rounded-xl p-4 flex items-center gap-3`}>
       <div className={`p-2 rounded-lg ${bg}`}>
         <Icon className={`w-5 h-5 ${color}`} />
       </div>

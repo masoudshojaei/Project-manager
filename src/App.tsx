@@ -1,32 +1,24 @@
 import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { 
-  LayoutDashboard, 
-  Calendar, 
-  AlertTriangle, 
-  Save, 
+import {
+  LayoutDashboard,
+  Calendar,
+  Save,
   FolderOpen,
   Cpu,
-  Monitor,
-  Battery,
-  Wifi,
-  Users,
   CheckCircle2,
   Clock,
   CircleDashed,
   Ban,
-  Zap
 } from "lucide-react";
 import type { ProjectData, TabType } from "./types";
 import { loadStatusFile, saveStatusFile, browseForFile, loadFileAtPath } from "./tauri-api";
 import Dashboard from "./components/Dashboard";
 import GanttChart from "./components/GanttChart";
-import Blockers from "./components/Blockers";
 
 const tabs: { id: TabType; label: string; icon: React.ElementType }[] = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
   { id: "gantt", label: "Gantt Chart", icon: Calendar },
-  { id: "blockers", label: "Blockers", icon: AlertTriangle },
 ];
 
 export default function App() {
@@ -46,9 +38,6 @@ export default function App() {
       const projectData = await loadStatusFile();
       setData(projectData);
       setFilePath(await getFilePath());
-      if (projectData.meta?.title) {
-        document.title = projectData.meta.title;
-      }
     } catch (err) {
       console.error("Failed to load:", err);
     } finally {
@@ -64,9 +53,6 @@ export default function App() {
       setData(projectData);
       setFilePath(path);
       setIsModified(false);
-      if (projectData.meta?.title) {
-        document.title = projectData.meta.title;
-      }
     } catch (err) {
       console.error("Browse failed:", err);
     }
@@ -118,20 +104,22 @@ export default function App() {
         >
           <Cpu className="w-16 h-16 text-github-blue mx-auto mb-6" />
           <h1 className="text-2xl font-bold text-white mb-4">Project Manager</h1>
-          <p className="text-github-dim mb-8">No STATUS.md file found. Please select one to get started.</p>
+          <p className="text-github-dim mb-8">No project file found. Please select one to get started.</p>
           <button onClick={handleBrowse} className="btn-primary text-lg px-8 py-3">
             <FolderOpen className="w-5 h-5" />
-            Select STATUS.md
+            Select Project File
           </button>
         </motion.div>
       </div>
     );
   }
 
-  const totalTasks = data.sections.reduce((sum, s) => sum + s.cards.reduce((c, card) => c + card.tasks.length, 0), 0);
-  const doneTasks = data.sections.flatMap(s => s.cards).flatMap(c => c.tasks).filter(t => t.done && !t.cancelledReason).length;
-  const inProgress = data.milestones.filter(m => m.status === "inprogress").length;
-  const pending = totalTasks - doneTasks - data.sections.flatMap(s => s.cards).flatMap(c => c.tasks).filter(t => t.cancelledReason).length;
+  const allTasks = data.sections.flatMap(s => s.cards).flatMap(c => c.tasks);
+  const totalTasks = allTasks.length;
+  const doneTasks = allTasks.filter(t => t.done && !t.cancelledReason).length;
+  const inProgressTasks = allTasks.filter(t => !t.done && !t.cancelledReason && t.actStart).length;
+  const cancelledTasks = allTasks.filter(t => t.cancelledReason).length;
+  const pendingTasks = totalTasks - doneTasks - inProgressTasks - cancelledTasks;
 
   return (
     <div className="h-screen w-screen flex flex-col bg-github-bg overflow-hidden">
@@ -143,42 +131,30 @@ export default function App() {
               <Cpu className="w-5 h-5 text-white" />
             </div>
             <div>
-              <h1 className="text-lg font-bold text-white leading-tight">{data?.meta?.title || "Project Manager"}</h1>
-              <p className="text-xs text-github-dim truncate max-w-md">{data?.meta?.focus || data?.meta?.owner || "Project Status Tracker"}</p>
+              <h1 className="text-lg font-bold text-white leading-tight">Project Manager</h1>
+              <p className="text-xs text-github-dim">{totalTasks} tasks total</p>
             </div>
           </div>
 
           <div className="h-8 w-px bg-github-border mx-2" />
 
           <div className="flex items-center gap-4 text-xs text-github-dim">
-            {data?.meta?.mcu && <span className="flex items-center gap-1.5"><Cpu className="w-3.5 h-3.5" /> {data.meta.mcu}</span>}
-            {data?.meta?.display && <span className="flex items-center gap-1.5"><Monitor className="w-3.5 h-3.5" /> {data.meta.display}</span>}
-            {data?.meta?.ram && <span className="flex items-center gap-1.5"><Zap className="w-3.5 h-3.5" /> {data.meta.ram}</span>}
-            {data?.meta?.power && <span className="flex items-center gap-1.5"><Battery className="w-3.5 h-3.5" /> {data.meta.power}</span>}
-            {data?.meta?.comm && <span className="flex items-center gap-1.5"><Wifi className="w-3.5 h-3.5" /> {data.meta.comm}</span>}
-            {data?.meta?.targetUsers && <span className="flex items-center gap-1.5"><Users className="w-3.5 h-3.5" /> {data.meta.targetUsers}</span>}
-            {data?.meta?.owner && !data?.meta?.targetUsers && <span className="flex items-center gap-1.5"><Users className="w-3.5 h-3.5" /> {data.meta.owner}</span>}
+            <span className="flex items-center gap-1.5 text-github-green-bright">
+              <CheckCircle2 className="w-3.5 h-3.5" /> {doneTasks} Done
+            </span>
+            <span className="flex items-center gap-1.5 text-github-yellow">
+              <Clock className="w-3.5 h-3.5" /> {inProgressTasks} In Progress
+            </span>
+            <span className="flex items-center gap-1.5 text-github-red">
+              <CircleDashed className="w-3.5 h-3.5" /> {pendingTasks} Pending
+            </span>
+            <span className="flex items-center gap-1.5 text-github-dim">
+              <Ban className="w-3.5 h-3.5" /> {cancelledTasks} Cancelled
+            </span>
           </div>
         </div>
 
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2 text-xs">
-            <span className="flex items-center gap-1 text-github-green-bright">
-              <CheckCircle2 className="w-3.5 h-3.5" /> {doneTasks}
-            </span>
-            <span className="flex items-center gap-1 text-github-yellow">
-              <Clock className="w-3.5 h-3.5" /> {inProgress}
-            </span>
-            <span className="flex items-center gap-1 text-github-red">
-              <CircleDashed className="w-3.5 h-3.5" /> {pending}
-            </span>
-            <span className="flex items-center gap-1 text-github-dim">
-              <Ban className="w-3.5 h-3.5" /> {data.blockers.length}
-            </span>
-          </div>
-
-          <div className="h-6 w-px bg-github-border" />
-
           {isModified && (
             <motion.span
               initial={{ opacity: 0, x: 10 }}
@@ -194,8 +170,8 @@ export default function App() {
             Open
           </button>
 
-          <button 
-            onClick={handleSave} 
+          <button
+            onClick={handleSave}
             disabled={saveStatus === "saving"}
             className={`btn-primary text-sm py-1.5 ${saveStatus === "saved" ? "bg-github-green-bright" : ""}`}
           >
@@ -244,7 +220,6 @@ export default function App() {
           >
             {activeTab === "dashboard" && <Dashboard data={data} onUpdate={updateData} />}
             {activeTab === "gantt" && <GanttChart data={data} />}
-            {activeTab === "blockers" && <Blockers data={data} />}
           </motion.div>
         </AnimatePresence>
       </main>
@@ -252,13 +227,12 @@ export default function App() {
       {/* Status Bar */}
       <footer className="h-8 border-t border-github-border bg-github-bg/80 flex items-center px-4 justify-between text-xs text-github-dim shrink-0">
         <div className="flex items-center gap-4">
-          <span>Last updated: {data.lastUpdated}</span>
           {filePath && <span className="truncate max-w-md">{filePath}</span>}
         </div>
         <div className="flex items-center gap-4">
           <span>{data.sections.length} Sections</span>
-          <span>{data.milestones.length} Milestones</span>
-          <span>{data.blockers.length} Blockers</span>
+          <span>{data.sections.reduce((sum, s) => sum + s.cards.length, 0)} Cards</span>
+          <span>{totalTasks} Tasks</span>
         </div>
       </footer>
     </div>
