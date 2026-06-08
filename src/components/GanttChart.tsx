@@ -1,44 +1,52 @@
 import { useState, useMemo, useRef } from "react";
 import { ZoomIn, ZoomOut, MoveHorizontal } from "lucide-react";
 import type { ProjectData } from "../types";
+import { parseDateToObject } from "../dateUtils";
 
 interface GanttChartProps {
   data: ProjectData;
 }
 
-const BAR_HEIGHT = 28;           // height of each bar
-const BAR_GAP = 44;              // vertical gap between rows (was ~32, now more space for labels)
-const LABEL_OFFSET = -20;        // pixels above the bar to place the label
+const BAR_HEIGHT = 24;
+const BAR_GAP = 56;
 const MIN_DAY_WIDTH = 4;
 const MAX_DAY_WIDTH = 80;
+
+/** A single row in the Gantt — one task with optional est + act bars */
+interface GanttRow {
+  id: string;
+  name: string;
+  section: string;
+  card: string;
+  status: string;
+  estStart?: Date;
+  estEnd?: Date;
+  actStart?: Date;
+  actEnd?: Date;
+}
 
 export default function GanttChart({ data }: GanttChartProps) {
   const [zoom, setZoom] = useState(12);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Collect all dated items (tasks with est dates)
-  const items = useMemo(() => {
-    const result: {
-      id: string;
-      name: string;
-      start: Date;
-      end: Date;
-      type: "est" | "act";
-      status: string;
-      section: string;
-      card: string;
-    }[] = [];
-
+  // ── Build rows: one per task, with both est and act dates ──
+  const rows = useMemo<GanttRow[]>(() => {
+    const result: GanttRow[] = [];
     data.sections.forEach((section) => {
       section.cards.forEach((card) => {
         card.tasks.forEach((task, idx) => {
-          if (task.estStart && task.estEnd) {
+          const estStart = task.estStart ? (parseDateToObject(task.estStart) || undefined) : undefined;
+          const estEnd = task.estEnd ? (parseDateToObject(task.estEnd) || undefined) : undefined;
+          const actStart = task.actStart ? (parseDateToObject(task.actStart) || undefined) : undefined;
+          const actEnd = task.actEnd ? (parseDateToObject(task.actEnd) || undefined) : undefined;
+
+          // Only include if at least one date range exists
+          if ((estStart && estEnd) || (actStart && actEnd)) {
             result.push({
-              id: `${section.id}-${card.id}-${idx}-est`,
+              id: `${section.id}-${card.id}-${idx}`,
               name: task.text,
-              start: new Date(task.estStart),
-              end: new Date(task.estEnd),
-              type: "est",
+              section: section.title,
+              card: card.name,
               status: task.done
                 ? "completed"
                 : task.cancelledReason
@@ -46,48 +54,42 @@ export default function GanttChart({ data }: GanttChartProps) {
                 : task.actStart
                 ? "inprogress"
                 : "pending",
-              section: section.title,
-              card: card.name,
-            });
-          }
-          if (task.actStart && task.actEnd) {
-            result.push({
-              id: `${section.id}-${card.id}-${idx}-act`,
-              name: `${task.text} (actual)`,
-              start: new Date(task.actStart),
-              end: new Date(task.actEnd),
-              type: "act",
-              status: task.done
-                ? "completed"
-                : task.cancelledReason
-                ? "cancelled"
-                : "inprogress",
-              section: section.title,
-              card: card.name,
+              estStart,
+              estEnd,
+              actStart,
+              actEnd,
             });
           }
         });
       });
     });
-
-    return result.sort((a, b) => a.start.getTime() - b.start.getTime());
+    return result.sort((a, b) => {
+      const aStart = a.actStart || a.estStart;
+      const bStart = b.actStart || b.estStart;
+      return (aStart?.getTime() || 0) - (bStart?.getTime() || 0);
+    });
   }, [data]);
 
+  // ── Compute timeline bounds ──
   const { minDate, maxDate, totalDays } = useMemo(() => {
-    if (items.length === 0) {
+    if (rows.length === 0) {
       const now = new Date();
       return { minDate: now, maxDate: new Date(now.getTime() + 30 * 86400000), totalDays: 30 };
     }
-    const starts = items.map((i) => i.start.getTime());
-    const ends = items.map((i) => i.end.getTime());
-    const min = new Date(Math.min(...starts));
-    const max = new Date(Math.max(...ends));
-    // Add padding
+    const allDates: number[] = [];
+    rows.forEach((r) => {
+      if (r.estStart) allDates.push(r.estStart.getTime());
+      if (r.estEnd) allDates.push(r.estEnd.getTime());
+      if (r.actStart) allDates.push(r.actStart.getTime());
+      if (r.actEnd) allDates.push(r.actEnd.getTime());
+    });
+    const min = new Date(Math.min(...allDates));
+    const max = new Date(Math.max(...allDates));
     min.setDate(min.getDate() - 3);
     max.setDate(max.getDate() + 7);
     const days = Math.ceil((max.getTime() - min.getTime()) / 86400000);
     return { minDate: min, maxDate: max, totalDays: Math.max(days, 14) };
-  }, [items]);
+  }, [rows]);
 
   const dayWidth = Math.max(MIN_DAY_WIDTH, Math.min(MAX_DAY_WIDTH, zoom));
   const chartWidth = totalDays * dayWidth;
@@ -116,7 +118,8 @@ export default function GanttChart({ data }: GanttChartProps) {
     return labels;
   }, [minDate, maxDate, dayWidth]);
 
-  const statusColor = (status: string, type: "est" | "act") => {
+  // ── Color mapping ──
+  const statusColor = (status: string, isActual: boolean) => {
     const base: Record<string, string> = {
       completed: "#238636",
       inprogress: "#d29922",
@@ -124,17 +127,11 @@ export default function GanttChart({ data }: GanttChartProps) {
       cancelled: "#8b949e",
     };
     const c = base[status] || "#8b949e";
-    return type === "act" ? c : c + "80"; // estimated = 50% opacity
+    return isActual ? c : c + "50"; // estimated = 50% opacity
   };
 
-  const handleWheel = (e: React.WheelEvent) => {
-    if (e.shiftKey) {
-      e.preventDefault();
-      // scroll handled by overflow-x-auto
-    }
-  };
-
-  if (items.length === 0) {
+  // ── Render ──
+  if (rows.length === 0) {
     return (
       <div className="h-full flex flex-col items-center justify-center text-github-dim">
         <MoveHorizontal className="w-12 h-12 mb-4 opacity-30" />
@@ -165,22 +162,19 @@ export default function GanttChart({ data }: GanttChartProps) {
         </button>
         <div className="flex-1" />
         <div className="flex items-center gap-3 text-xs text-github-dim">
-          <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm" style={{ background: "#23863680" }} /> Est. Complete</span>
-          <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm" style={{ background: "#238636" }} /> Act. Complete</span>
-          <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm" style={{ background: "#d2992280" }} /> Est. In Progress</span>
-          <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm" style={{ background: "#d29922" }} /> Act. In Progress</span>
+          <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm" style={{ background: "#238636" }} /> Actual</span>
+          <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm" style={{ background: "#23863650" }} /> Estimated</span>
         </div>
       </div>
 
       {/* Chart */}
       <div
         ref={containerRef}
-        className="flex-1 overflow-x-auto overflow-y-hidden glass-panel relative"
-        onWheel={handleWheel}
+        className="flex-1 overflow-x-auto overflow-y-auto glass-panel relative"
       >
-        <div style={{ width: chartWidth, minWidth: "100%" }} className="h-full relative">
+        <div style={{ width: chartWidth, minWidth: "100%" }} className="relative">
           {/* Month headers */}
-          <div className="sticky top-0 h-8 border-b border-github-border bg-github-bg/80 backdrop-blur z-10 flex items-center">
+          <div className="sticky top-0 h-8 border-b border-github-border bg-github-bg/90 backdrop-blur z-10 flex items-center">
             {monthLabels.map((m, i) => (
               <div key={i} className="absolute text-xs text-github-dim font-medium px-2" style={{ left: m.x }}>
                 {m.label}
@@ -199,57 +193,90 @@ export default function GanttChart({ data }: GanttChartProps) {
             ))}
           </div>
 
-          {/* Bars */}
-          <svg className="absolute inset-0 pt-8" style={{ width: chartWidth, height: "100%" }}>
-            {items.map((item, i) => {
-              const x = getX(item.start);
-              const w = getWidth(item.start, item.end);
-              const y = i * BAR_GAP + 16; // top padding
-              const color = statusColor(item.status, item.type);
-              const isEst = item.type === "est";
+          {/* Task rows */}
+          <svg className="absolute inset-0 pt-8" style={{ width: chartWidth, height: rows.length * BAR_GAP + 40 }}>
+            {rows.map((row, i) => {
+              const y = i * BAR_GAP + 24;
+              const hasEst = row.estStart && row.estEnd;
+              const hasAct = row.actStart && row.actEnd;
+              const estY = y + 2;
+              const actY = y + 2; // same vertical position — actual drawn on top
 
               return (
-                <g key={item.id}>
-                  {/* ── LABEL ON TOP OF BAR ── */}
+                <g key={row.id}>
+                  {/* Row label */}
                   <text
-                    x={x + 4}
-                    y={y + LABEL_OFFSET}
+                    x={4}
+                    y={y - 6}
                     fill="#c9d1d9"
                     fontSize="11"
                     fontFamily="system-ui, sans-serif"
                     fontWeight="500"
                     style={{ pointerEvents: "none" }}
                   >
-                    {item.name.length > 40 ? item.name.slice(0, 37) + "..." : item.name}
+                    {row.name.length > 50 ? row.name.slice(0, 47) + "..." : row.name}
                   </text>
 
-                  {/* ── BAR ── */}
-                  <rect
-                    x={x}
-                    y={y}
-                    width={w}
-                    height={BAR_HEIGHT}
-                    rx={4}
-                    fill={color}
-                    stroke={isEst ? color.replace("80", "40") : color + "60"}
-                    strokeWidth={1}
-                    style={{ cursor: "pointer" }}
-                  >
-                    <title>{`${item.name}\n${item.section} › ${item.card}\n${item.start.toLocaleDateString()} → ${item.end.toLocaleDateString()}\n${item.type === "est" ? "Estimated" : "Actual"} • ${item.status}`}</title>
-                  </rect>
+                  {/* Estimated bar (bottom layer, full width) */}
+                  {hasEst && (
+                    <rect
+                      x={getX(row.estStart!)}
+                      y={estY}
+                      width={getWidth(row.estStart!, row.estEnd!)}
+                      height={BAR_HEIGHT}
+                      rx={4}
+                      fill={statusColor(row.status, false)}
+                      stroke={statusColor(row.status, false).replace("50", "30")}
+                      strokeWidth={1}
+                      style={{ cursor: "pointer" }}
+                    >
+                      <title>{`${row.name} (Estimated)\n${row.section} › ${row.card}\n${row.estStart!.toLocaleDateString()} → ${row.estEnd!.toLocaleDateString()}`}</title>
+                    </rect>
+                  )}
 
-                  {/* ── DATE RANGE INSIDE BAR ── */}
-                  {w > 60 && (
+                  {/* Actual bar (top layer, drawn on top of estimated) */}
+                  {hasAct && (
+                    <rect
+                      x={getX(row.actStart!)}
+                      y={actY}
+                      width={getWidth(row.actStart!, row.actEnd!)}
+                      height={BAR_HEIGHT}
+                      rx={4}
+                      fill={statusColor(row.status, true)}
+                      stroke={statusColor(row.status, true) + "80"}
+                      strokeWidth={2}
+                      style={{ cursor: "pointer" }}
+                    >
+                      <title>{`${row.name} (Actual)\n${row.section} › ${row.card}\n${row.actStart!.toLocaleDateString()} → ${row.actEnd!.toLocaleDateString()}`}</title>
+                    </rect>
+                  )}
+
+                  {/* Date labels inside bars */}
+                  {hasEst && getWidth(row.estStart!, row.estEnd!) > 80 && !hasAct && (
                     <text
-                      x={x + w / 2}
-                      y={y + BAR_HEIGHT / 2 + 4}
+                      x={getX(row.estStart!) + getWidth(row.estStart!, row.estEnd!) / 2}
+                      y={estY + BAR_HEIGHT / 2 + 4}
                       fill="#fff"
-                      fontSize="10"
+                      fontSize="9"
                       fontFamily="system-ui, sans-serif"
                       textAnchor="middle"
                       style={{ pointerEvents: "none" }}
                     >
-                      {`${item.start.getDate()}/${item.start.getMonth() + 1}–${item.end.getDate()}/${item.end.getMonth() + 1}`}
+                      {`${row.estStart!.getDate()}/${row.estStart!.getMonth() + 1}–${row.estEnd!.getDate()}/${row.estEnd!.getMonth() + 1}`}
+                    </text>
+                  )}
+                  {hasAct && getWidth(row.actStart!, row.actEnd!) > 60 && (
+                    <text
+                      x={getX(row.actStart!) + getWidth(row.actStart!, row.actEnd!) / 2}
+                      y={actY + BAR_HEIGHT / 2 + 4}
+                      fill="#fff"
+                      fontSize="9"
+                      fontFamily="system-ui, sans-serif"
+                      textAnchor="middle"
+                      fontWeight="600"
+                      style={{ pointerEvents: "none" }}
+                    >
+                      {`${row.actStart!.getDate()}/${row.actStart!.getMonth() + 1}–${row.actEnd!.getDate()}/${row.actEnd!.getMonth() + 1}`}
                     </text>
                   )}
                 </g>

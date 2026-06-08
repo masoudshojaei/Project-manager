@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ChevronRight,
@@ -88,7 +88,9 @@ export default function Dashboard({ data, onUpdate }: DashboardProps) {
   const [expandedCards, setExpandedCards] = useState<Set<string>>(new Set(data.sections.flatMap(s => s.cards.map(c => c.id))));
   const [selectedTask, setSelectedTask] = useState<{ sectionId: string; cardId: string; taskIndex: number } | null>(null);
   const [detailsPanel, setDetailsPanel] = useState<{ sectionId: string; cardId: string; taskIndex: number } | null>(null);
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; items: AddMenuItem[] } | null>(null);
+  // NEW: Store a snapshot of the task when the details panel opens, to detect dirty state without needing TaskDetailsPanel to report it
+  const [detailsSnapshot, setDetailsSnapshot] = useState<string | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; items: AddMenuItem[]; adjusted?: boolean } | null>(null);
   const [editingTask, setEditingTask] = useState<{ sectionId: string; cardId: string; taskIndex: number; text: string } | null>(null);
   const [addingTask, setAddingTask] = useState<{ sectionId: string; cardId: string } | null>(null);
   const [newTaskText, setNewTaskText] = useState("");
@@ -104,6 +106,30 @@ export default function Dashboard({ data, onUpdate }: DashboardProps) {
     const pending = totalTasks - doneTasks - inProgress - cancelled;
     return { totalTasks, doneTasks, inProgress, pending, cancelled };
   }, [data]);
+
+  // NEW: Close context menu on Escape key
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setContextMenu(null);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
+  // NEW: Close context menu when clicking outside
+  useEffect(() => {
+    if (!contextMenu) return;
+    const handleClick = () => setContextMenu(null);
+    const timer = setTimeout(() => {
+      window.addEventListener("click", handleClick);
+    }, 50);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener("click", handleClick);
+    };
+  }, [contextMenu]);
 
   const toggleSection = (id: string) => {
     const next = new Set(expandedSections);
@@ -324,8 +350,71 @@ export default function Dashboard({ data, onUpdate }: DashboardProps) {
 
   // ── CONTEXT MENU BUILDERS ──
 
-  const handleSectionContextMenu = (e: React.MouseEvent, sectionId: string, sectionIndex: number) => {
+  // NEW: Helper to close existing menu and open new one with boundary detection
+  const openContextMenu = useCallback((e: React.MouseEvent, items: AddMenuItem[]) => {
     e.preventDefault();
+    e.stopPropagation();
+
+    // Always close any existing menu first (only one menu at a time)
+    setContextMenu(null);
+
+    requestAnimationFrame(() => {
+      const menuHeight = items.length * 36 + 16;
+      const menuWidth = 200;
+
+      let x = e.clientX;
+      let y = e.clientY;
+      let adjusted = false;
+
+      if (x + menuWidth > window.innerWidth) {
+        x = window.innerWidth - menuWidth - 8;
+        adjusted = true;
+      }
+
+      if (y + menuHeight > window.innerHeight) {
+        y = window.innerHeight - menuHeight - 8;
+        adjusted = true;
+      }
+
+      setContextMenu({ x, y, items, adjusted });
+    });
+  }, []);
+
+  // NEW: Helper to get current task by location
+  const getTaskAt = useCallback((sectionId: string, cardId: string, taskIndex: number): Task | undefined => {
+    const section = data.sections.find(s => s.id === sectionId);
+    if (!section) return undefined;
+    const card = section.cards.find(c => c.id === cardId);
+    if (!card) return undefined;
+    return card.tasks[taskIndex];
+  }, [data]);
+
+  // NEW: Check if details panel has unsaved changes by comparing current task to snapshot
+  const isDetailsDirty = useCallback((): boolean => {
+    if (!detailsPanel || !detailsSnapshot) return false;
+    const currentTask = getTaskAt(detailsPanel.sectionId, detailsPanel.cardId, detailsPanel.taskIndex);
+    if (!currentTask) return false;
+    return JSON.stringify(currentTask) !== detailsSnapshot;
+  }, [detailsPanel, detailsSnapshot, getTaskAt]);
+
+  // NEW: Open details panel with dirty check (no onDirtyChange needed from TaskDetailsPanel)
+  const openDetailsPanel = useCallback((sectionId: string, cardId: string, taskIndex: number) => {
+    // If there's already a panel open with unsaved changes
+    if (detailsPanel && isDetailsDirty()) {
+      const keep = confirm("You have unsaved changes in the task details. Keep them and close, or discard and open new task?\n\nClick OK to keep (will close current panel).\nClick Cancel to discard and open new task.");
+      if (keep) {
+        setContextMenu(null);
+        return;
+      }
+    }
+
+    const task = getTaskAt(sectionId, cardId, taskIndex);
+    setDetailsSnapshot(task ? JSON.stringify(task) : null);
+    setDetailsPanel({ sectionId, cardId, taskIndex });
+    setContextMenu(null);
+  }, [detailsPanel, isDetailsDirty, getTaskAt]);
+
+  const handleSectionContextMenu = (e: React.MouseEvent, sectionId: string, sectionIndex: number) => {
     const items: AddMenuItem[] = [
       { label: "Add Card", icon: FilePlus, action: () => { addCard(sectionId); setContextMenu(null); }, color: "text-github-blue" },
       { label: "Add Section Below", icon: FolderPlus, action: () => { addSection(); setContextMenu(null); }, color: "text-github-purple" },
@@ -334,11 +423,10 @@ export default function Dashboard({ data, onUpdate }: DashboardProps) {
       { label: "—", icon: () => null, action: () => {} },
       { label: "Delete Section", icon: Trash2, action: () => { deleteSection(sectionId); setContextMenu(null); }, color: "text-github-red" },
     ];
-    setContextMenu({ x: e.clientX, y: e.clientY, items });
+    openContextMenu(e, items);
   };
 
   const handleCardContextMenu = (e: React.MouseEvent, sectionId: string, cardId: string, cardIndex: number) => {
-    e.preventDefault();
     const items: AddMenuItem[] = [
       { label: "Add Task", icon: ListPlus, action: () => { setAddingTask({ sectionId, cardId }); setContextMenu(null); }, color: "text-github-green-bright" },
       { label: "Add Card Below", icon: FilePlus, action: () => { addCard(sectionId); setContextMenu(null); }, color: "text-github-blue" },
@@ -347,11 +435,10 @@ export default function Dashboard({ data, onUpdate }: DashboardProps) {
       { label: "—", icon: () => null, action: () => {} },
       { label: "Delete Card", icon: Trash2, action: () => { deleteCard(sectionId, cardId); setContextMenu(null); }, color: "text-github-red" },
     ];
-    setContextMenu({ x: e.clientX, y: e.clientY, items });
+    openContextMenu(e, items);
   };
 
   const handleTaskContextMenu = (e: React.MouseEvent, sectionId: string, cardId: string, taskIndex: number) => {
-    e.preventDefault();
     const items: AddMenuItem[] = [
       { label: "Add Task Below", icon: ListPlus, action: () => { setAddingTask({ sectionId, cardId }); setContextMenu(null); }, color: "text-github-green-bright" },
       { label: "—", icon: () => null, action: () => {} },
@@ -360,10 +447,10 @@ export default function Dashboard({ data, onUpdate }: DashboardProps) {
       { label: "Set Pending", icon: CircleDashed, action: () => setTaskStatus(sectionId, cardId, taskIndex, "pending"), color: "text-github-red" },
       { label: "Cancel Task...", icon: XCircle, action: () => { const reason = prompt("Reason for cancellation:"); if (reason) setTaskStatus(sectionId, cardId, taskIndex, "cancelled", reason); }, color: "text-github-dim" },
       { label: "—", icon: () => null, action: () => {} },
-      { label: "Edit Details...", icon: Edit3, action: () => { setDetailsPanel({ sectionId, cardId, taskIndex }); setContextMenu(null); }, color: "text-github-blue" },
+      { label: "Edit Details...", icon: Edit3, action: () => { openDetailsPanel(sectionId, cardId, taskIndex); }, color: "text-github-blue" },
       { label: "Delete Task", icon: Trash2, action: () => deleteTask(sectionId, cardId, taskIndex), color: "text-github-red" },
     ];
-    setContextMenu({ x: e.clientX, y: e.clientY, items });
+    openContextMenu(e, items);
   };
 
   // ── DATE UPDATE WRAPPERS WITH VALIDATION ──
@@ -372,11 +459,12 @@ export default function Dashboard({ data, onUpdate }: DashboardProps) {
     const newData = { ...data };
     const section = newData.sections.find(s => s.id === sectionId)!;
     const card = section.cards.find(c => c.id === cardId)!;
-    const task = { ...card.tasks[taskIndex], [field]: value };
 
-    if (!validateTaskDates(task)) return;
+    const taskCopy = { ...card.tasks[taskIndex], [field]: value };
 
-    card.tasks[taskIndex] = task;
+    if (!validateTaskDates(taskCopy)) return;
+
+    card.tasks[taskIndex] = taskCopy;
     onUpdate(newData);
   };
 
@@ -638,17 +726,17 @@ export default function Dashboard({ data, onUpdate }: DashboardProps) {
         </div>
       </div>
 
-      {/* Context Menu */}
+      {/* Context Menu - FIXED: higher z-index and boundary-aware positioning */}
       <AnimatePresence>
         {contextMenu && (
           <>
-            <div className="fixed inset-0 z-40" onClick={() => setContextMenu(null)} />
+            <div className="fixed inset-0 z-[60]" onClick={() => setContextMenu(null)} />
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
               style={{ left: contextMenu.x, top: contextMenu.y }}
-              className="fixed z-50 bg-github-card border border-github-border rounded-xl shadow-2xl py-1 min-w-[180px]"
+              className="fixed z-[70] bg-github-card border border-github-border rounded-xl shadow-2xl py-1 min-w-[180px]"
             >
               {contextMenu.items.map((item, i) => (
                 item.label === "—" ? (
@@ -668,7 +756,7 @@ export default function Dashboard({ data, onUpdate }: DashboardProps) {
         )}
       </AnimatePresence>
 
-      {/* Task Details Panel */}
+      {/* Task Details Panel - no onDirtyChange needed, dirty check is self-contained in Dashboard */}
       <AnimatePresence>
         {detailsPanel && (
           <TaskDetailsPanel
@@ -677,7 +765,7 @@ export default function Dashboard({ data, onUpdate }: DashboardProps) {
             sectionId={detailsPanel.sectionId}
             cardId={detailsPanel.cardId}
             taskIndex={detailsPanel.taskIndex}
-            onClose={() => setDetailsPanel(null)}
+            onClose={() => { setDetailsPanel(null); setDetailsSnapshot(null); }}
           />
         )}
       </AnimatePresence>

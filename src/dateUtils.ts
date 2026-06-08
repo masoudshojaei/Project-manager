@@ -1,85 +1,96 @@
-// Date parsing and formatting utilities (dd/mm/yyyy format)
+// ── ROBUST DATE UTILITIES ──
+// Internal format: ISO YYYY-MM-DD
+// Display format: dd/mm/yyyy
 
-/**
- * Parse a date string in dd/mm/yyyy format
- * Returns null if invalid
- */
-export function parseDate(dateStr: string | undefined): Date | null {
-  if (!dateStr || !dateStr.trim()) return null;
-  const parts = dateStr.trim().split('/');
-  if (parts.length !== 3) return null;
-  
-  const [dd, mm, yyyy] = parts.map(p => parseInt(p, 10));
-  if (!dd || !mm || !yyyy) return null;
-  
-  const date = new Date(yyyy, mm - 1, dd);
-  return date;
+/** Check if string is valid dd/mm/yyyy with full 4-digit year */
+export function isValidDateString(str: string): boolean {
+  if (!str) return false;
+  const parts = str.split(/[\/\-.]/);
+  if (parts.length !== 3) return false;
+  const d = parseInt(parts[0]);
+  const m = parseInt(parts[1]);
+  const y = parseInt(parts[2]);
+  if (isNaN(d) || isNaN(m) || isNaN(y)) return false;
+  if (m < 1 || m > 12) return false;
+  if (d < 1 || d > 31) return false;
+  // Require full 4-digit year — prevents "08/06/2" from being treated as valid
+  if (y < 1000) return false;
+  return true;
 }
 
-/**
- * Format a date to dd/mm/yyyy string
- */
-export function formatDate(date: Date): string {
-  const dd = String(date.getDate()).padStart(2, '0');
-  const mm = String(date.getMonth() + 1).padStart(2, '0');
-  const yyyy = date.getFullYear();
+/** Parse dd/mm/yyyy, yyyy-mm-dd, or dd-mm-yyyy → Date object (local midnight) */
+export function parseDateToObject(str: string): Date | null {
+  if (!str) return null;
+
+  // ISO: 2026-06-03
+  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
+    const [y, m, d] = str.split("-").map(Number);
+    return new Date(y, m - 1, d);
+  }
+
+  // dd/mm/yyyy or dd-mm-yyyy
+  const parts = str.split(/[\/\-.]/);
+  if (parts.length === 3) {
+    const d = parseInt(parts[0]);
+    const m = parseInt(parts[1]) - 1;
+    let y = parseInt(parts[2]);
+    // Only auto-correct exactly 2-digit years (e.g. "26" → 2026)
+    if (y < 100 && parts[2].length === 2) y += 2000;
+    const date = new Date(y, m, d);
+    if (date.getDate() === d && date.getMonth() === m && date.getFullYear() === y) {
+      return date;
+    }
+  }
+
+  return null;
+}
+
+/** Convert any date format to ISO YYYY-MM-DD */
+export function formatDateISO(date: Date | string | undefined): string | undefined {
+  if (!date) return undefined;
+  const d = typeof date === "string" ? parseDateToObject(date) : date;
+  if (!d) return undefined;
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+/** Convert any date format to dd/mm/yyyy display */
+export function formatDateDisplay(date: Date | string | undefined): string {
+  if (!date) return "";
+  const d = typeof date === "string" ? parseDateToObject(date) : date;
+  if (!d) return "";
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const yyyy = d.getFullYear();
   return `${dd}/${mm}/${yyyy}`;
 }
 
-/**
- * Get today's date in dd/mm/yyyy format
- */
+/** Compare two dates (any format) — returns true if a ≤ b */
+export function isDateBeforeOrEqual(a?: string, b?: string): boolean {
+  if (!a || !b) return true;
+  const da = parseDateToObject(a);
+  const db = parseDateToObject(b);
+  if (!da || !db) return true;
+  return da.getTime() <= db.getTime();
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+//  BACKWARD-COMPATIBLE ALIASES (from v1)
+// ═════════════════════════════════════════════════════════════════════════════
+
+/** @deprecated Use parseDateToObject() instead */
+export function parseDate(dateStr: string | undefined): Date | null {
+  return parseDateToObject(dateStr || "");
+}
+
+/** @deprecated Use formatDateDisplay() instead */
+export function formatDate(date: Date): string {
+  return formatDateDisplay(date);
+}
+
+/** @deprecated Use formatDateDisplay(new Date()) instead */
 export function getTodayString(): string {
-  return formatDate(new Date());
-}
-
-/**
- * Check if a date string is valid dd/mm/yyyy
- */
-export function isValidDateString(dateStr: string): boolean {
-  return parseDate(dateStr) !== null;
-}
-
-/**
- * Check if a task is overdue
- * Overdue = today > estEnd AND task is not completed/cancelled
- */
-export function isTaskOverdue(
-  estEnd: string | undefined,
-  done: boolean,
-  cancelledReason: string | undefined
-): boolean {
-  if (!estEnd || done || cancelledReason) return false;
-  
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  
-  const end = parseDate(estEnd);
-  if (!end) return false;
-  end.setHours(0, 0, 0, 0);
-  
-  return today > end;
-}
-
-/**
- * Get task status (auto-derived)
- * Priority: cancelled > completed > inprogress > pending
- */
-export function getTaskStatus(
-  done: boolean,
-  cancelledReason: string | undefined,
-  actStart: string | undefined
-): 'cancelled' | 'completed' | 'inprogress' | 'pending' {
-  if (cancelledReason) return 'cancelled';
-  if (done) return 'completed';
-  if (actStart) return 'inprogress';
-  return 'pending';
-}
-
-/**
- * Days between two dates
- */
-export function daysBetween(start: Date, end: Date): number {
-  const oneDay = 24 * 60 * 60 * 1000;
-  return Math.round((end.getTime() - start.getTime()) / oneDay);
+  return formatDateDisplay(new Date());
 }

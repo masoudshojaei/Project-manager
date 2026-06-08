@@ -10,9 +10,11 @@ import {
   Clock,
   CircleDashed,
   Ban,
+  FilePlus,
 } from "lucide-react";
 import type { ProjectData, TabType } from "./types";
-import { loadStatusFile, saveStatusFile, browseForFile, loadFileAtPath } from "./tauri-api";
+import { useAppStore } from "./store";
+import { loadStatusFile, saveStatusFile, browseForFile, loadFileAtPath, createNewFile } from "./tauri-api";
 import Dashboard from "./components/Dashboard";
 import GanttChart from "./components/GanttChart";
 
@@ -22,26 +24,58 @@ const tabs: { id: TabType; label: string; icon: React.ElementType }[] = [
 ];
 
 export default function App() {
-  const [data, setData] = useState<ProjectData | null>(null);
+  const store = useAppStore();
+  const [data, setData] = useState<ProjectData | null>(store.data);
   const [activeTab, setActiveTab] = useState<TabType>("dashboard");
   const [isLoading, setIsLoading] = useState(true);
   const [isModified, setIsModified] = useState(false);
-  const [filePath, setFilePath] = useState<string | null>(null);
+  const [filePath, setFilePath] = useState<string | null>(store.filePath);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [showStartup, setShowStartup] = useState(false);
 
+  // On mount: try to load existing, or show startup screen
   useEffect(() => {
-    loadInitialFile();
+    const init = async () => {
+      try {
+        const projectData = await loadStatusFile();
+        if (projectData) {
+          setData(projectData);
+          const path = await getFilePath();
+          setFilePath(path);
+          store.setData(projectData);
+          store.setFilePath(path || "");
+        } else {
+          setShowStartup(true);
+        }
+      } catch (err) {
+        console.error("Failed to load:", err);
+        setShowStartup(true);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    init();
   }, []);
 
-  const loadInitialFile = async () => {
+  // ── FILE OPERATIONS ──
+
+  const handleNewFile = async () => {
     try {
-      const projectData = await loadStatusFile();
-      setData(projectData);
-      setFilePath(await getFilePath());
+      const path = await createNewFile();
+      if (!path) return;
+      const emptyData: ProjectData = {
+        sections: [],
+      };
+      await saveStatusFile(emptyData, path);
+      setData(emptyData);
+      setFilePath(path);
+      setIsModified(false);
+      setShowStartup(false);
+      store.setData(emptyData);
+      store.setFilePath(path);
     } catch (err) {
-      console.error("Failed to load:", err);
-    } finally {
-      setIsLoading(false);
+      console.error("New file failed:", err);
+      alert("Failed to create new file.");
     }
   };
 
@@ -53,8 +87,12 @@ export default function App() {
       setData(projectData);
       setFilePath(path);
       setIsModified(false);
+      setShowStartup(false);
+      store.setData(projectData);
+      store.setFilePath(path);
     } catch (err) {
       console.error("Browse failed:", err);
+      alert("Failed to load file.");
     }
   };
 
@@ -66,6 +104,8 @@ export default function App() {
       setFilePath(savedPath);
       setIsModified(false);
       setSaveStatus("saved");
+      store.setFilePath(savedPath);
+      store.setIsModified(false);
       setTimeout(() => setSaveStatus("idle"), 2000);
     } catch (err) {
       console.error("Save failed:", err);
@@ -77,16 +117,16 @@ export default function App() {
   const updateData = useCallback((newData: ProjectData) => {
     setData(newData);
     setIsModified(true);
+    store.setData(newData);
+    store.setIsModified(true);
   }, []);
+
+  // ── RENDER STATES ──
 
   if (isLoading) {
     return (
       <div className="h-screen w-screen flex items-center justify-center bg-github-bg">
-        <motion.div
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="text-center"
-        >
+        <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="text-center">
           <div className="w-16 h-16 border-4 border-github-blue border-t-transparent rounded-full animate-spin mx-auto mb-4" />
           <p className="text-github-dim text-lg">Loading Project Manager...</p>
         </motion.div>
@@ -94,7 +134,8 @@ export default function App() {
     );
   }
 
-  if (!data) {
+  // Startup screen: New or Open
+  if (showStartup || !data) {
     return (
       <div className="h-screen w-screen flex items-center justify-center bg-github-bg">
         <motion.div
@@ -103,12 +144,19 @@ export default function App() {
           className="glass-panel p-12 max-w-lg w-full text-center"
         >
           <Cpu className="w-16 h-16 text-github-blue mx-auto mb-6" />
-          <h1 className="text-2xl font-bold text-white mb-4">Project Manager</h1>
-          <p className="text-github-dim mb-8">No project file found. Please select one to get started.</p>
-          <button onClick={handleBrowse} className="btn-primary text-lg px-8 py-3">
-            <FolderOpen className="w-5 h-5" />
-            Select Project File
-          </button>
+          <h1 className="text-2xl font-bold text-white mb-2">Project Manager</h1>
+          <p className="text-github-dim mb-8">Create a new project or open an existing one.</p>
+
+          <div className="flex flex-col gap-3">
+            <button onClick={handleNewFile} className="btn-primary text-lg px-8 py-3 flex items-center justify-center gap-2">
+              <FilePlus className="w-5 h-5" />
+              Create New Project
+            </button>
+            <button onClick={handleBrowse} className="btn-secondary text-lg px-8 py-3 flex items-center justify-center gap-2">
+              <FolderOpen className="w-5 h-5" />
+              Open Existing File
+            </button>
+          </div>
         </motion.div>
       </div>
     );
@@ -156,11 +204,7 @@ export default function App() {
 
         <div className="flex items-center gap-3">
           {isModified && (
-            <motion.span
-              initial={{ opacity: 0, x: 10 }}
-              animate={{ opacity: 1, x: 0 }}
-              className="text-xs text-github-yellow font-medium"
-            >
+            <motion.span initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} className="text-xs text-github-yellow font-medium">
               Modified
             </motion.span>
           )}
@@ -240,6 +284,10 @@ export default function App() {
 }
 
 async function getFilePath(): Promise<string | null> {
-  const { invoke } = await import("@tauri-apps/api/core");
-  return invoke("get_file_path");
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    return invoke("get_file_path");
+  } catch {
+    return null;
+  }
 }

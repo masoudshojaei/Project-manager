@@ -1,7 +1,7 @@
 import { useState, useRef } from "react";
 import { motion } from "framer-motion";
 import { Calendar, X } from "lucide-react";
-import { isValidDateString } from "../dateUtils";
+import { isValidDateString, formatDateDisplay, formatDateISO } from "../dateUtils";
 
 interface DateInputProps {
   value: string | undefined;
@@ -17,16 +17,21 @@ export default function DateInput({
   placeholder = "dd/mm/yyyy",
 }: DateInputProps) {
   const [isOpen, setIsOpen] = useState(false);
-  const [inputValue, setInputValue] = useState(value || "");
+  const [inputValue, setInputValue] = useState(formatDateDisplay(value));
   const inputRef = useRef<HTMLInputElement>(null);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const newValue = e.target.value;
-    setInputValue(newValue);
+    setInputValue(e.target.value);
+  };
 
-    // Validate and update if valid dd/mm/yyyy
-    if (isValidDateString(newValue) || newValue === "") {
-      onChange(newValue || undefined);
+  const handleBlur = () => {
+    if (inputValue === "") {
+      onChange(undefined);
+    } else if (isValidDateString(inputValue)) {
+      onChange(formatDateISO(inputValue));
+    } else {
+      // Invalid — revert to last known good value
+      setInputValue(formatDateDisplay(value));
     }
   };
 
@@ -36,12 +41,10 @@ export default function DateInput({
   };
 
   const handleDateFromCalendar = (date: Date) => {
-    const dd = String(date.getDate()).padStart(2, "0");
-    const mm = String(date.getMonth() + 1).padStart(2, "0");
-    const yyyy = date.getFullYear();
-    const formatted = `${dd}/${mm}/${yyyy}`;
+    const iso = formatDateISO(date);
+    const formatted = formatDateDisplay(date);
     setInputValue(formatted);
-    onChange(formatted);
+    onChange(iso);
     setIsOpen(false);
   };
 
@@ -57,11 +60,13 @@ export default function DateInput({
             type="text"
             value={inputValue}
             onChange={handleInputChange}
+            onBlur={handleBlur}
             placeholder={placeholder}
-            className="input-field text-sm py-2 pr-8"
+            className="input-field text-sm py-2 pr-8 w-full"
           />
           <button
-            onClick={() => setIsOpen(!isOpen)}
+            type="button"
+            onClick={() => setIsOpen((v) => !v)}
             className="absolute right-2 top-1/2 -translate-y-1/2 text-github-dim hover:text-github-blue transition-colors"
           >
             <Calendar className="w-4 h-4" />
@@ -69,6 +74,7 @@ export default function DateInput({
         </div>
         {value && (
           <button
+            type="button"
             onClick={handleClear}
             className="px-2 py-2 rounded-lg text-github-dim hover:text-github-red hover:bg-github-red/10 transition-colors"
           >
@@ -77,7 +83,7 @@ export default function DateInput({
         )}
       </div>
 
-      {/* Calendar Picker */}
+      {/* Calendar Picker — inline, simple toggle */}
       {isOpen && (
         <motion.div
           initial={{ opacity: 0, y: -10 }}
@@ -100,27 +106,36 @@ function CalendarPicker({
   value: string;
 }) {
   const [month, setMonth] = useState(() => {
-    if (value) {
-      const parts = value.split("/");
-      if (parts.length === 3) {
-        return new Date(parseInt(parts[2]), parseInt(parts[1]) - 1);
-      }
-    }
-    return new Date();
+    const parsed = parseDateToObject(value);
+    return parsed || new Date();
   });
 
   const daysInMonth = new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate();
-  const firstDay = new Date(month.getFullYear(), month.getMonth(), 1).getDay();
-  const days: (number | null)[] = [];
+  // Monday-start: Sunday(0) → 6, Monday(1) → 0, Tuesday(2) → 1, etc.
+  const rawFirstDay = new Date(month.getFullYear(), month.getMonth(), 1).getDay();
+  const firstDay = rawFirstDay === 0 ? 6 : rawFirstDay - 1;
 
-  for (let i = 0; i < firstDay; i++) {
-    days.push(null);
-  }
-  for (let i = 1; i <= daysInMonth; i++) {
-    days.push(i);
-  }
+  const days: (number | null)[] = [];
+  for (let i = 0; i < firstDay; i++) days.push(null);
+  for (let i = 1; i <= daysInMonth; i++) days.push(i);
 
   const monthName = month.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+
+  const today = new Date();
+  const isToday = (day: number) =>
+    day === today.getDate() &&
+    month.getMonth() === today.getMonth() &&
+    month.getFullYear() === today.getFullYear();
+
+  const isSelected = (day: number) => {
+    const parsed = parseDateToObject(value);
+    if (!parsed) return false;
+    return (
+      day === parsed.getDate() &&
+      month.getMonth() === parsed.getMonth() &&
+      month.getFullYear() === parsed.getFullYear()
+    );
+  };
 
   return (
     <div className="w-64">
@@ -140,8 +155,9 @@ function CalendarPicker({
         </button>
       </div>
 
+      {/* Monday-start headers */}
       <div className="grid grid-cols-7 gap-1 mb-2">
-        {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => (
+        {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((day) => (
           <div key={day} className="text-center text-xs font-semibold text-github-dim">
             {day}
           </div>
@@ -153,15 +169,17 @@ function CalendarPicker({
           <button
             key={idx}
             onClick={() => {
-              if (day) {
-                onDateSelect(new Date(month.getFullYear(), month.getMonth(), day));
-              }
+              if (day) onDateSelect(new Date(month.getFullYear(), month.getMonth(), day));
             }}
             disabled={!day}
             className={`aspect-square text-xs font-semibold rounded transition-colors ${
-              day
-                ? "text-github-fg hover:bg-github-blue/20 cursor-pointer"
-                : "text-github-border cursor-default"
+              !day
+                ? "text-github-border cursor-default"
+                : isSelected(day)
+                ? "bg-github-blue text-white hover:bg-github-blue/80"
+                : isToday(day)
+                ? "bg-github-blue/20 text-github-blue hover:bg-github-blue/30"
+                : "text-github-fg hover:bg-github-border/50 cursor-pointer"
             }`}
           >
             {day}
@@ -177,4 +195,27 @@ function CalendarPicker({
       </button>
     </div>
   );
+}
+
+// Local helper — parses dd/mm/yyyy or yyyy-mm-dd for the calendar
+function parseDateToObject(str: string): Date | null {
+  if (!str) return null;
+  // ISO: 2026-06-03
+  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
+    const [y, m, d] = str.split("-").map(Number);
+    return new Date(y, m - 1, d);
+  }
+  // dd/mm/yyyy
+  const parts = str.split("/");
+  if (parts.length === 3) {
+    const d = parseInt(parts[0]);
+    const m = parseInt(parts[1]) - 1;
+    let y = parseInt(parts[2]);
+    if (y < 100 && parts[2].length === 2) y += 2000;
+    const date = new Date(y, m, d);
+    if (date.getDate() === d && date.getMonth() === m && date.getFullYear() === y) {
+      return date;
+    }
+  }
+  return null;
 }
