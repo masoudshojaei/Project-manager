@@ -104,19 +104,98 @@ export default function GanttChart({ data }: GanttChartProps) {
     return Math.max(dayWidth * 0.5, days * dayWidth);
   };
 
-  const monthLabels = useMemo(() => {
-    const labels: { label: string; x: number }[] = [];
-    const d = new Date(minDate);
-    d.setDate(1);
-    while (d <= maxDate) {
-      labels.push({
-        label: d.toLocaleDateString("en-US", { month: "short", year: "2-digit" }),
-        x: getX(new Date(d)),
-      });
-      d.setMonth(d.getMonth() + 1);
+  // ── Dynamic time scale based on zoom ──
+  const timeScale = useMemo<"day" | "week" | "month">(() => {
+    if (dayWidth >= 16) return "day";
+    if (dayWidth >= 4) return "week";
+    return "month";
+  }, [dayWidth]);
+
+  // ── Grid lines at time-unit boundaries ──
+  const gridLines = useMemo(() => {
+    const lines: { x: number }[] = [];
+    const cw = totalDays * dayWidth;
+
+    if (timeScale === "day") {
+      for (let i = 0; i <= totalDays; i++) {
+        lines.push({ x: i * dayWidth });
+      }
+    } else if (timeScale === "week") {
+      const d = new Date(minDate);
+      const dayOfWeek = d.getDay(); // 0=Sun
+      const daysToMonday = (dayOfWeek + 6) % 7;
+      d.setDate(d.getDate() - daysToMonday);
+      while (d <= maxDate) {
+        const x = ((d.getTime() - minDate.getTime()) / 86400000) * dayWidth;
+        lines.push({ x });
+        d.setDate(d.getDate() + 7);
+      }
+    } else {
+      const d = new Date(minDate);
+      d.setDate(1);
+      while (d <= maxDate) {
+        const x = ((d.getTime() - minDate.getTime()) / 86400000) * dayWidth;
+        lines.push({ x });
+        d.setMonth(d.getMonth() + 1);
+      }
     }
-    return labels;
-  }, [minDate, maxDate, dayWidth]);
+    lines.push({ x: cw }); // right edge
+    return lines;
+  }, [timeScale, minDate, maxDate, totalDays, dayWidth]);
+
+  // ── Header columns (labeled time units) ──
+  const headerColumns = useMemo(() => {
+    const columns: { label: string; x: number; width: number }[] = [];
+    const cw = totalDays * dayWidth;
+
+    if (timeScale === "day") {
+      const labelInterval = dayWidth >= 40 ? 1 : dayWidth >= 24 ? 2 : 7;
+      for (let i = 0; i <= totalDays; i += labelInterval) {
+        const d = new Date(minDate);
+        d.setDate(d.getDate() + i);
+        const x = i * dayWidth;
+        const nextX = Math.min((i + labelInterval) * dayWidth, cw);
+        columns.push({
+          label: labelInterval === 1 ? `${d.getDate()}` : `${d.getDate()}/${d.getMonth() + 1}`,
+          x,
+          width: nextX - x,
+        });
+      }
+    } else if (timeScale === "week") {
+      const d = new Date(minDate);
+      const daysToMonday = (d.getDay() + 6) % 7;
+      d.setDate(d.getDate() - daysToMonday);
+      while (d <= maxDate) {
+        const weekStart = new Date(d);
+        const x = ((weekStart.getTime() - minDate.getTime()) / 86400000) * dayWidth;
+        const nextWeek = new Date(d);
+        nextWeek.setDate(nextWeek.getDate() + 7);
+        const nextX = Math.min(((nextWeek.getTime() - minDate.getTime()) / 86400000) * dayWidth, cw);
+        columns.push({
+          label: `${weekStart.getDate()}/${weekStart.getMonth() + 1}`,
+          x,
+          width: Math.max(1, nextX - x),
+        });
+        d.setDate(d.getDate() + 7);
+      }
+    } else {
+      const d = new Date(minDate);
+      d.setDate(1);
+      while (d <= maxDate) {
+        const monthStart = new Date(d);
+        const x = ((monthStart.getTime() - minDate.getTime()) / 86400000) * dayWidth;
+        const nextMonth = new Date(d.getFullYear(), d.getMonth() + 1, 1);
+        const nextX = Math.min(((nextMonth.getTime() - minDate.getTime()) / 86400000) * dayWidth, cw);
+        columns.push({
+          label: monthStart.toLocaleDateString("en-US", { month: "short", year: "2-digit" }),
+          x,
+          width: Math.max(1, nextX - x),
+        });
+        d.setMonth(d.getMonth() + 1);
+      }
+    }
+    return columns;
+  }, [timeScale, minDate, maxDate, totalDays, dayWidth]);
 
   // ── Color mapping ──
   const statusColor = (status: string, isActual: boolean) => {
@@ -152,7 +231,8 @@ export default function GanttChart({ data }: GanttChartProps) {
         >
           <ZoomOut className="w-4 h-4" />
         </button>
-        <span className="text-xs text-github-dim w-12 text-center">{Math.round(dayWidth)}px/d</span>
+          <span className="text-xs text-github-dim w-12 text-center">{Math.round(dayWidth)}px</span>
+          <span className="text-xs text-github-dim w-16 text-center capitalize font-medium">{timeScale}</span>
         <button
           onClick={() => setZoom((z) => Math.min(MAX_DAY_WIDTH, z + 4))}
           className="p-2 rounded-lg bg-github-border/20 hover:bg-github-border/40 text-github-fg transition-colors"
@@ -164,6 +244,7 @@ export default function GanttChart({ data }: GanttChartProps) {
         <div className="flex items-center gap-3 text-xs text-github-dim">
           <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm" style={{ background: "#238636" }} /> Actual</span>
           <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm" style={{ background: "#23863650" }} /> Estimated</span>
+          <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm" style={{ background: "#d29922" }} /> In Progress</span>
         </div>
       </div>
 
@@ -173,22 +254,38 @@ export default function GanttChart({ data }: GanttChartProps) {
         className="flex-1 overflow-x-auto overflow-y-auto glass-panel relative"
       >
         <div style={{ width: chartWidth, minWidth: "100%" }} className="relative">
-          {/* Month headers */}
-          <div className="sticky top-0 h-8 border-b border-github-border bg-github-bg/90 backdrop-blur z-10 flex items-center">
-            {monthLabels.map((m, i) => (
-              <div key={i} className="absolute text-xs text-github-dim font-medium px-2" style={{ left: m.x }}>
-                {m.label}
+          {/* Time scale headers */}
+          <div className="sticky top-0 h-8 border-b border-github-border bg-github-bg/90 backdrop-blur z-10 flex items-center overflow-hidden">
+            {headerColumns.map((col, i) => (
+              <div
+                key={i}
+                className="absolute text-xs text-github-dim font-medium px-1 h-full flex items-center border-r border-github-border/10 truncate"
+                style={{ left: col.x, width: col.width }}
+                title={col.label}
+              >
+                {col.label}
               </div>
             ))}
           </div>
 
-          {/* Grid lines */}
+          {/* Grid lines + alternating column backgrounds */}
           <div className="absolute inset-0 pt-8 pointer-events-none">
-            {Array.from({ length: totalDays + 1 }).map((_, i) => (
+            {headerColumns.map((col, i) => (
+              <div
+                key={`bg-${i}`}
+                className="absolute top-0 bottom-0"
+                style={{
+                  left: col.x,
+                  width: col.width,
+                  backgroundColor: i % 2 === 0 ? "rgba(48, 54, 61, 0.08)" : "transparent",
+                }}
+              />
+            ))}
+            {gridLines.map((line, i) => (
               <div
                 key={i}
                 className="absolute top-0 bottom-0 border-l border-github-border/20"
-                style={{ left: i * dayWidth }}
+                style={{ left: line.x }}
               />
             ))}
           </div>
