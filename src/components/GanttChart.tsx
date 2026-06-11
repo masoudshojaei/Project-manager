@@ -9,7 +9,7 @@ interface GanttChartProps {
 
 const BAR_HEIGHT = 24;
 const BAR_GAP = 56;
-const MIN_DAY_WIDTH = 4;
+const MIN_DAY_WIDTH = 8;
 const MAX_DAY_WIDTH = 80;
 
 /** A single row in the Gantt — one task with optional est + act bars */
@@ -304,7 +304,7 @@ export default function GanttChart({ data }: GanttChartProps) {
                   {/* Row label */}
                   <text
                     x={4}
-                    y={y - 6}
+                    y={y + BAR_HEIGHT / 2 + 4}
                     fill="#c9d1d9"
                     fontSize="11"
                     fontFamily="system-ui, sans-serif"
