@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { motion } from "framer-motion";
 import { Calendar, X } from "lucide-react";
 import { isValidDateString, formatDateDisplay, formatDateISO } from "../dateUtils";
@@ -19,6 +19,25 @@ export default function DateInput({
   const [isOpen, setIsOpen] = useState(false);
   const [inputValue, setInputValue] = useState(formatDateDisplay(value));
   const inputRef = useRef<HTMLInputElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Close calendar when clicking outside
+    useEffect(() => {
+    if (!isOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    // small delay to avoid immediately closing on the same click that opened it
+    const timer = setTimeout(() => {
+      document.addEventListener("mousedown", handleClickOutside);
+    }, 50);
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [isOpen]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setInputValue(e.target.value);
@@ -49,7 +68,7 @@ export default function DateInput({
   };
 
   return (
-    <div className="relative">
+    <div className="relative" ref={containerRef}>
       <label className="text-xs font-semibold text-github-dim uppercase tracking-wider block mb-1">
         {label}
       </label>

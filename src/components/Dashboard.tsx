@@ -572,7 +572,7 @@ export default function Dashboard({ data, onUpdate }: DashboardProps) {
 
                   <AnimatePresence>
                     {expandedSections.has(section.id) && (
-                      <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.2 }} className="ml-4 overflow-hidden">
+                      <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.2 }} className="ml-4">
                         {section.cards.length === 0 ? (
                           <EmptyCardPlaceholder sectionId={section.id} />
                         ) : (
@@ -619,7 +619,7 @@ export default function Dashboard({ data, onUpdate }: DashboardProps) {
 
                                 <AnimatePresence>
                                   {expandedCards.has(card.id) && (
-                                    <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.15 }} className="ml-6 overflow-hidden">
+                                    <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.15 }} className="ml-6">
                                       {card.tasks.length === 0 ? (
                                         <EmptyTaskPlaceholder sectionId={section.id} cardId={card.id} />
                                       ) : (
