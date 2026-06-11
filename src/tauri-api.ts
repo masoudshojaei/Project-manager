@@ -98,7 +98,7 @@ function parseMarkdown(content: string): ProjectData {
 
       // Extract inline fields: | key:value | key:value
       const fields: Record<string, string> = {};
-      const fieldRegex = /\|\s*(\w+):([^|]+)/g;
+      const fieldRegex = /\|\s*([\w-]+):([^|]+)/g;
       let m;
       while ((m = fieldRegex.exec(rest)) !== null) {
         fields[m[1].trim()] = m[2].trim();
