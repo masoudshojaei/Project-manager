@@ -79,6 +79,12 @@ function parseMarkdown(content: string): ProjectData {
       } else {
         // It's a section
         const sectionTitle = title.replace(/[🟢🟡🔴⚪]\s*\d+%/, "").trim();
+        // Skip the old "Quick Stats" section — it's not real project data
+        if (sectionTitle.toLowerCase() === "quick stats") {
+          currentSection = null;
+          currentCard = null;
+          continue;
+        }
         currentSection = {
           id: `section-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
           title: sectionTitle,
@@ -165,23 +171,6 @@ function serializeMarkdown(data: ProjectData): string {
   lines.push(`# Project Status`);
   lines.push(``);
   lines.push(`> **Last Updated:** ${dateStr}`);
-  lines.push(``);
-  lines.push(`---`);
-  lines.push(``);
-
-  // Quick stats
-  const allTasks = data.sections.flatMap(s => s.cards).flatMap(c => c.tasks);
-  const done = allTasks.filter(t => t.done && !t.cancelledReason).length;
-  const inProg = allTasks.filter(t => !t.done && !t.cancelledReason && t.actStart).length;
-  const pending = allTasks.filter(t => !t.done && !t.cancelledReason && !t.actStart).length;
-  const cancelled = allTasks.filter(t => t.cancelledReason).length;
-
-  lines.push(`## Quick Stats`);
-  lines.push(``);
-  lines.push(`- **Completed:** ${done}`);
-  lines.push(`- **In Progress:** ${inProg}`);
-  lines.push(`- **Not Started:** ${pending}`);
-  lines.push(`- **Cancelled:** ${cancelled}`);
   lines.push(``);
   lines.push(`---`);
   lines.push(``);

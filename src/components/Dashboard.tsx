@@ -9,7 +9,6 @@ import {
   Trash2,
   Edit3,
   XCircle,
-  ArrowRightCircle,
   CircleDashed,
   ArrowUp,
   ArrowDown,
@@ -509,14 +508,47 @@ export default function Dashboard({ data, onUpdate }: DashboardProps) {
 
   return (
     <div className="h-full flex gap-4 p-4 overflow-hidden">
-      {/* Left Panel - Tasks (now full width) */}
+      {/* Left Panel - Tasks */}
       <div className="flex-1 flex flex-col min-w-0">
-        {/* Stats Cards */}
-        <div className="grid grid-cols-4 gap-3 mb-4 shrink-0">
-          <StatCard label="Completed" value={stats.doneTasks} color="text-github-green-bright" bg="bg-github-green-bright/10" border="border-github-green-bright/20" icon={CheckSquare} />
-          <StatCard label="In Progress" value={stats.inProgress} color="text-github-yellow" bg="bg-github-yellow/10" border="border-github-yellow/20" icon={ArrowRightCircle} />
-          <StatCard label="Not Started" value={stats.pending} color="text-github-red" bg="bg-github-red/10" border="border-github-red/20" icon={CircleDashed} />
-          <StatCard label="Cancelled" value={stats.cancelled} color="text-github-dim" bg="bg-github-dim/10" border="border-github-dim/20" icon={XCircle} />
+        {/* Quick Stats Pie Chart */}
+        <div className="flex items-center gap-6 mb-4 shrink-0 glass-panel rounded-xl p-4">
+          {/* Pie Chart */}
+          <div className="relative w-[120px] h-[120px] shrink-0">
+            <QuickStatsPie data={data} />
+            {/* Center total */}
+            <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+              <span className="text-lg font-bold text-white">{stats.totalTasks}</span>
+              <span className="text-[10px] text-github-dim uppercase tracking-wider">Total</span>
+            </div>
+          </div>
+
+          {/* Legend + Counts — single column, right-aligned */}
+          <div className="flex-1 flex flex-col gap-1.5 items-end text-right">
+            <LegendItem
+              color="#238636"
+              label="Completed"
+              count={stats.doneTasks}
+              total={stats.totalTasks}
+            />
+            <LegendItem
+              color="#d29922"
+              label="In Progress"
+              count={stats.inProgress}
+              total={stats.totalTasks}
+            />
+            <LegendItem
+              color="#f85149"
+              label="Not Started"
+              count={stats.pending}
+              total={stats.totalTasks}
+            />
+            <LegendItem
+              color="#8b949e"
+              label="Cancelled"
+              count={stats.cancelled}
+              total={stats.totalTasks}
+            />
+          </div>
         </div>
 
         {/* Task Tree */}
@@ -773,16 +805,81 @@ export default function Dashboard({ data, onUpdate }: DashboardProps) {
   );
 }
 
-function StatCard({ label, value, color, bg, border, icon: Icon }: { label: string; value: number; color: string; bg: string; border: string; icon: React.ElementType }) {
+// ── PIE CHART COMPONENT ──
+
+function QuickStatsPie({ data }: { data: ProjectData }) {
+  const slices = useMemo(() => {
+    const allTasks = data.sections.flatMap(s => s.cards).flatMap(c => c.tasks);
+    const total = allTasks.length;
+    if (total === 0) return [];
+
+    const done = allTasks.filter(t => t.done && !t.cancelledReason).length;
+    const inProg = allTasks.filter(t => !t.done && !t.cancelledReason && t.actStart).length;
+    const cancelled = allTasks.filter(t => t.cancelledReason).length;
+    const pending = total - done - inProg - cancelled;
+
+    const sliceData = [
+      { key: "completed", count: done, color: "#238636" },
+      { key: "inprogress", count: inProg, color: "#d29922" },
+      { key: "pending", count: pending, color: "#f85149" },
+      { key: "cancelled", count: cancelled, color: "#8b949e" },
+    ].filter(d => d.count > 0);
+
+    let cumulativeAngle = 0;
+    return sliceData.map(d => {
+      const percentage = d.count / total;
+      const angle = percentage * 360;
+      const startAngle = cumulativeAngle;
+      const endAngle = cumulativeAngle + angle;
+      cumulativeAngle += angle;
+
+      const r = 50;
+      const cx = 60;
+      const cy = 60;
+      const startRad = (startAngle - 90) * (Math.PI / 180);
+      const endRad = (endAngle - 90) * (Math.PI / 180);
+      const x1 = cx + r * Math.cos(startRad);
+      const y1 = cy + r * Math.sin(startRad);
+      const x2 = cx + r * Math.cos(endRad);
+      const y2 = cy + r * Math.sin(endRad);
+      const largeArc = angle > 180 ? 1 : 0;
+
+      const path = `M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${largeArc} 1 ${x2} ${y2} Z`;
+
+      return { ...d, path, percentage: Math.round(percentage * 100) };
+    });
+  }, [data]);
+
   return (
-    <motion.div whileHover={{ scale: 1.02 }} className={`${bg} ${border} border rounded-xl p-4 flex items-center gap-3`}>
-      <div className={`p-2 rounded-lg ${bg}`}>
-        <Icon className={`w-5 h-5 ${color}`} />
-      </div>
-      <div>
-        <div className={`text-2xl font-bold ${color}`}>{value}</div>
-        <div className="text-sm text-github-dim">{label}</div>
-      </div>
-    </motion.div>
+    <svg viewBox="0 0 120 120" className="w-full h-full" style={{ transform: "rotate(-90deg)" }}>
+      {slices.map(slice => (
+        <path
+          key={slice.key}
+          d={slice.path}
+          fill={slice.color}
+          stroke="#0d1117"
+          strokeWidth="2"
+          className="transition-opacity duration-200 hover:opacity-80 cursor-pointer"
+        >
+          <title>{`${slice.key}: ${slice.count} (${slice.percentage}%)`}</title>
+        </path>
+      ))}
+      {/* Donut hole */}
+      <circle cx="60" cy="60" r="32" fill="#0d1117" />
+    </svg>
+  );
+}
+
+// ── LEGEND ITEM ──
+
+function LegendItem({ color, label, count, total }: { color: string; label: string; count: number; total: number }) {
+  const pct = total > 0 ? Math.round((count / total) * 100) : 0;
+  return (
+    <div className="flex items-center gap-3">
+      <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: color }} />
+      <span className="text-sm text-github-fg">{label}</span>
+      <span className="text-sm font-bold text-white">{count}</span>
+      <span className="text-xs text-github-dim w-8">{pct}%</span>
+    </div>
   );
 }
